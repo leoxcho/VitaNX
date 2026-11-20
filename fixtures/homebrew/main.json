@@ -1,0 +1,6 @@
+{
+  "imports": {"8192": 888133750},
+  "expected_r0": 0,
+  "expected_stdout": "C-compiled ARMv7 homebrew running as native ARM64!\n",
+  "provenance": "Original C compiled by Apple Clang for armv7-none-eabi and linked by LLD; explicit Vita I/O NID bridge. No VitaSDK linking or commercial game code."
+}

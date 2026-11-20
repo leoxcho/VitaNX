@@ -1,0 +1,7 @@
+{
+  "source": "https://docs.vitasdk.org/group__SceDebugLedUser.html",
+  "bindings": [
+    {"library": "SceDebugLed", "library_nid": "ae004c0a", "function_nid": "78e702d3", "name": "sceKernelSetGPO"},
+    {"library": "SceDebugLed", "library_nid": "ae004c0a", "function_nid": "14f582cf", "name": "sceKernelGetGPI"}
+  ]
+}

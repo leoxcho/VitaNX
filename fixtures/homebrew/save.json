@@ -1,0 +1,11 @@
+{
+  "imports": {
+    "8192": 3429349117,
+    "8196": 888133750,
+    "8200": 4256375443,
+    "8204": 3339421830,
+    "8208": 374419289
+  },
+  "expected_r0": 0,
+  "provenance": "Original C save roundtrip fixture; fixed-address ARM ELF and explicit Vita NIDs, not VitaSDK linked."
+}

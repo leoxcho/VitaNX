@@ -1,0 +1,453 @@
+{
+  "sources": [
+    {
+      "url": "https://raw.githubusercontent.com/vitasdk/vita-headers/master/db/360/SceLibKernel.yml",
+      "sha256": "2000a9fa5d447fe98921391c197d4be0c6f110ba4f00e4aac9e23340fab41bea"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/vitasdk/vita-headers/master/db/360/SceKernelThreadMgr.yml",
+      "sha256": "2b8864ef8b8718bd051f4fc3da4cf42b0a14187ec6c1ef0f4a66c8dcf7d1eb76"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/vitasdk/vita-headers/master/db/360/SceIofilemgr.yml",
+      "sha256": "e330f21c3c3cf18bf2d407be63a172ae228714fe1571078f01588ebe09cdff40"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/vitasdk/vita-headers/master/db/360/SceProcessmgr.yml",
+      "sha256": "3c4f64b52ce06aa9b50dd93e06c37d90534b0cab88170cdb4dd0b72dc24794fb"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/vitasdk/vita-headers/master/db/360/SceSysmem.yml",
+      "sha256": "631707331150c0af841be9e43e154c53f50588a546cb729d8870cfec101f36b3"
+    }
+  ],
+  "bindings": [
+    {
+      "library": "SceLibKernel",
+      "library_nid": "cae9ace6",
+      "name": "_sceKernelCreateLwMutex",
+      "function_nid": "b84ef718"
+    },
+    {
+      "library": "SceLibKernel",
+      "library_nid": "cae9ace6",
+      "name": "sceIoOpen",
+      "function_nid": "6c60ac61"
+    },
+    {
+      "library": "SceLibKernel",
+      "library_nid": "cae9ace6",
+      "name": "sceKernelCreateEventFlag",
+      "function_nid": "8516d040"
+    },
+    {
+      "library": "SceLibKernel",
+      "library_nid": "cae9ace6",
+      "name": "sceKernelCreateLwCond",
+      "function_nid": "48c7eae6"
+    },
+    {
+      "library": "SceLibKernel",
+      "library_nid": "cae9ace6",
+      "name": "sceKernelCreateLwMutex",
+      "function_nid": "da6ec8ef"
+    },
+    {
+      "library": "SceLibKernel",
+      "library_nid": "cae9ace6",
+      "name": "sceKernelCreateMutex",
+      "function_nid": "ed53334a"
+    },
+    {
+      "library": "SceLibKernel",
+      "library_nid": "cae9ace6",
+      "name": "sceKernelCreateSema",
+      "function_nid": "1bd67366"
+    },
+    {
+      "library": "SceLibKernel",
+      "library_nid": "cae9ace6",
+      "name": "sceKernelCreateThread",
+      "function_nid": "c5c11ee7"
+    },
+    {
+      "library": "SceLibKernel",
+      "library_nid": "cae9ace6",
+      "name": "sceKernelDeleteLwCond",
+      "function_nid": "721f6cb3"
+    },
+    {
+      "library": "SceLibKernel",
+      "library_nid": "cae9ace6",
+      "name": "sceKernelDeleteLwMutex",
+      "function_nid": "244e76d2"
+    },
+    {
+      "library": "SceLibKernel",
+      "library_nid": "cae9ace6",
+      "name": "sceKernelExitProcess",
+      "function_nid": "7595d9aa"
+    },
+    {
+      "library": "SceLibKernel",
+      "library_nid": "cae9ace6",
+      "name": "sceKernelGetProcessTime",
+      "function_nid": "4c4672bf"
+    },
+    {
+      "library": "SceLibKernel",
+      "library_nid": "cae9ace6",
+      "name": "sceKernelGetProcessTimeLow",
+      "function_nid": "e9f973b1"
+    },
+    {
+      "library": "SceLibKernel",
+      "library_nid": "cae9ace6",
+      "name": "sceKernelGetProcessTimeWide",
+      "function_nid": "b110c123"
+    },
+    {
+      "library": "SceLibKernel",
+      "library_nid": "cae9ace6",
+      "name": "sceKernelGetTLSAddr",
+      "function_nid": "b295eb61"
+    },
+    {
+      "library": "SceLibKernel",
+      "library_nid": "cae9ace6",
+      "name": "sceKernelGetThreadId",
+      "function_nid": "0fb972f9"
+    },
+    {
+      "library": "SceLibKernel",
+      "library_nid": "cae9ace6",
+      "name": "sceKernelLockLwMutex",
+      "function_nid": "46e7be7b"
+    },
+    {
+      "library": "SceLibKernel",
+      "library_nid": "cae9ace6",
+      "name": "sceKernelLockLwMutexCB",
+      "function_nid": "3148c6b6"
+    },
+    {
+      "library": "SceLibKernel",
+      "library_nid": "cae9ace6",
+      "name": "sceKernelLockMutex",
+      "function_nid": "1d8d7945"
+    },
+    {
+      "library": "SceLibKernel",
+      "library_nid": "cae9ace6",
+      "name": "sceKernelLockMutexCB",
+      "function_nid": "2bdaa524"
+    },
+    {
+      "library": "SceLibKernel",
+      "library_nid": "cae9ace6",
+      "name": "sceKernelPollEventFlag",
+      "function_nid": "1fbb0fe1"
+    },
+    {
+      "library": "SceLibKernel",
+      "library_nid": "cae9ace6",
+      "name": "sceKernelStartThread",
+      "function_nid": "f08de149"
+    },
+    {
+      "library": "SceLibKernel",
+      "library_nid": "cae9ace6",
+      "name": "sceKernelTryLockLwMutex",
+      "function_nid": "a6a2c915"
+    },
+    {
+      "library": "SceLibKernel",
+      "library_nid": "cae9ace6",
+      "name": "sceKernelUnlockLwMutex",
+      "function_nid": "91fa6614"
+    },
+    {
+      "library": "SceLibKernel",
+      "library_nid": "cae9ace6",
+      "name": "sceKernelUnlockLwMutex2",
+      "function_nid": "120afc8c"
+    },
+    {
+      "library": "SceLibKernel",
+      "library_nid": "cae9ace6",
+      "name": "sceKernelWaitEventFlag",
+      "function_nid": "83c0e2af"
+    },
+    {
+      "library": "SceLibKernel",
+      "library_nid": "cae9ace6",
+      "name": "sceKernelWaitEventFlagCB",
+      "function_nid": "e737b1df"
+    },
+    {
+      "library": "SceLibKernel",
+      "library_nid": "cae9ace6",
+      "name": "sceKernelWaitSema",
+      "function_nid": "0c7b834b"
+    },
+    {
+      "library": "SceLibKernel",
+      "library_nid": "cae9ace6",
+      "name": "sceKernelWaitThreadEnd",
+      "function_nid": "ddb395a9"
+    },
+    {
+      "library": "SceLibKernel",
+      "library_nid": "cae9ace6",
+      "name": "sceKernelWaitThreadEndCB",
+      "function_nid": "c54941ed"
+    },
+    {
+      "library": "SceThreadmgr",
+      "library_nid": "859a24b1",
+      "name": "sceKernelCancelCallback",
+      "function_nid": "30741ef2"
+    },
+    {
+      "library": "SceThreadmgr",
+      "library_nid": "859a24b1",
+      "name": "sceKernelCheckCallback",
+      "function_nid": "e53e41f6"
+    },
+    {
+      "library": "SceThreadmgr",
+      "library_nid": "859a24b1",
+      "name": "sceKernelClearEventFlag",
+      "function_nid": "4cb87ca7"
+    },
+    {
+      "library": "SceThreadmgr",
+      "library_nid": "859a24b1",
+      "name": "sceKernelCreateCallback",
+      "function_nid": "b19cf7e9"
+    },
+    {
+      "library": "SceThreadmgr",
+      "library_nid": "859a24b1",
+      "name": "sceKernelDelayThread",
+      "function_nid": "4b675d05"
+    },
+    {
+      "library": "SceThreadmgr",
+      "library_nid": "859a24b1",
+      "name": "sceKernelDelayThreadCB",
+      "function_nid": "9c0180e1"
+    },
+    {
+      "library": "SceThreadmgr",
+      "library_nid": "859a24b1",
+      "name": "sceKernelDeleteCallback",
+      "function_nid": "d469676b"
+    },
+    {
+      "library": "SceThreadmgr",
+      "library_nid": "859a24b1",
+      "name": "sceKernelDeleteEventFlag",
+      "function_nid": "5840162c"
+    },
+    {
+      "library": "SceThreadmgr",
+      "library_nid": "859a24b1",
+      "name": "sceKernelDeleteMutex",
+      "function_nid": "cb78710d"
+    },
+    {
+      "library": "SceThreadmgr",
+      "library_nid": "859a24b1",
+      "name": "sceKernelDeleteSema",
+      "function_nid": "db32948a"
+    },
+    {
+      "library": "SceThreadmgr",
+      "library_nid": "859a24b1",
+      "name": "sceKernelDeleteThread",
+      "function_nid": "1bbde3d9"
+    },
+    {
+      "library": "SceThreadmgr",
+      "library_nid": "859a24b1",
+      "name": "sceKernelExitDeleteThread",
+      "function_nid": "1d17decf"
+    },
+    {
+      "library": "SceThreadmgr",
+      "library_nid": "859a24b1",
+      "name": "sceKernelGetCallbackCount",
+      "function_nid": "038644d5"
+    },
+    {
+      "library": "SceThreadmgr",
+      "library_nid": "859a24b1",
+      "name": "sceKernelGetSystemTimeWide",
+      "function_nid": "f4ee4fa9"
+    },
+    {
+      "library": "SceThreadmgr",
+      "library_nid": "859a24b1",
+      "name": "sceKernelGetThreadTLSAddr",
+      "function_nid": "baca6891"
+    },
+    {
+      "library": "SceThreadmgr",
+      "library_nid": "859a24b1",
+      "name": "sceKernelNotifyCallback",
+      "function_nid": "a4683592"
+    },
+    {
+      "library": "SceThreadmgr",
+      "library_nid": "859a24b1",
+      "name": "sceKernelPollSema",
+      "function_nid": "866ef048"
+    },
+    {
+      "library": "SceThreadmgr",
+      "library_nid": "859a24b1",
+      "name": "sceKernelSetEventFlag",
+      "function_nid": "ec94dff7"
+    },
+    {
+      "library": "SceThreadmgr",
+      "library_nid": "859a24b1",
+      "name": "sceKernelSignalSema",
+      "function_nid": "e6b761d1"
+    },
+    {
+      "library": "SceThreadmgr",
+      "library_nid": "859a24b1",
+      "name": "sceKernelTryLockMutex",
+      "function_nid": "72fc1f54"
+    },
+    {
+      "library": "SceThreadmgr",
+      "library_nid": "859a24b1",
+      "name": "sceKernelUnlockMutex",
+      "function_nid": "1a372ec8"
+    },
+    {
+      "library": "SceThreadmgrCoredumpTime",
+      "library_nid": "5e8d0e22",
+      "name": "sceKernelExitThread",
+      "function_nid": "0c8a38e1"
+    },
+    {
+      "library": "SceIofilemgr",
+      "library_nid": "f2ff276e",
+      "name": "_sceIoOpen",
+      "function_nid": "cc67b6fd"
+    },
+    {
+      "library": "SceIofilemgr",
+      "library_nid": "f2ff276e",
+      "name": "sceIoClose",
+      "function_nid": "c70b8886"
+    },
+    {
+      "library": "SceIofilemgr",
+      "library_nid": "f2ff276e",
+      "name": "sceIoLseek32",
+      "function_nid": "49252b9b"
+    },
+    {
+      "library": "SceIofilemgr",
+      "library_nid": "f2ff276e",
+      "name": "sceIoRead",
+      "function_nid": "fdb32293"
+    },
+    {
+      "library": "SceIofilemgr",
+      "library_nid": "f2ff276e",
+      "name": "sceIoSyncByFd",
+      "function_nid": "16512f59"
+    },
+    {
+      "library": "SceIofilemgr",
+      "library_nid": "f2ff276e",
+      "name": "sceIoWrite",
+      "function_nid": "34efd876"
+    },
+    {
+      "library": "SceProcessmgr",
+      "library_nid": "2dd91812",
+      "name": "_sceKernelExitProcessForUser",
+      "function_nid": "c053dc6b"
+    },
+    {
+      "library": "SceProcessmgr",
+      "library_nid": "2dd91812",
+      "name": "sceKernelGetProcessParam",
+      "function_nid": "2be3e066"
+    },
+    {
+      "library": "SceProcessmgr",
+      "library_nid": "2dd91812",
+      "name": "sceKernelGetProcessTimeCore",
+      "function_nid": "d37a8437"
+    },
+    {
+      "library": "SceProcessmgr",
+      "library_nid": "2dd91812",
+      "name": "sceKernelGetProcessTimeLowCore",
+      "function_nid": "f5d0d4c6"
+    },
+    {
+      "library": "SceProcessmgr",
+      "library_nid": "2dd91812",
+      "name": "sceKernelGetProcessTimeWideCore",
+      "function_nid": "89da0967"
+    },
+    {
+      "library": "SceProcessmgr",
+      "library_nid": "2dd91812",
+      "name": "sceKernelGetStderr",
+      "function_nid": "fa5e3ada"
+    },
+    {
+      "library": "SceProcessmgr",
+      "library_nid": "2dd91812",
+      "name": "sceKernelGetStdout",
+      "function_nid": "e5aa625c"
+    },
+    {
+      "library": "SceSysmem",
+      "library_nid": "37fe725a",
+      "name": "sceKernelAllocMemBlock",
+      "function_nid": "b9d5ebde"
+    },
+    {
+      "library": "SceSysmem",
+      "library_nid": "37fe725a",
+      "name": "sceKernelFindMemBlockByAddr",
+      "function_nid": "a33b99d1"
+    },
+    {
+      "library": "SceSysmem",
+      "library_nid": "37fe725a",
+      "name": "sceKernelFreeMemBlock",
+      "function_nid": "a91e15ee"
+    },
+    {
+      "library": "SceSysmem",
+      "library_nid": "37fe725a",
+      "name": "sceKernelGetMemBlockBase",
+      "function_nid": "b8ef5818"
+    },
+    {
+      "library": "SceThreadmgr",
+      "library_nid": "859a24b1",
+      "name": "sceKernelExitThread",
+      "function_nid": "0c8a38e1",
+      "compatibility_alias": "Legacy SceLibc import observed in original plaintext module; current VitaSDK lists the same function/NID under SceThreadmgrCoredumpTime."
+    },
+    {
+      "library": "SceThreadmgr",
+      "library_nid": "859a24b1",
+      "name": "sceKernelChangeThreadVfpException",
+      "function_nid": "cc18fbae"
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "source": "https://github.com/vitasdk/vita-headers/blob/master/db/360/SceLibKernel.yml",
+  "bindings": [
+    {
+      "library_nid": "cae9ace6",
+      "function_nid": "632980d7",
+      "name": "sceClibMemset"
+    },
+    {
+      "library_nid": "cae9ace6",
+      "function_nid": "14e9dbd7",
+      "name": "sceClibMemcpy"
+    },
+    {
+      "library_nid": "cae9ace6",
+      "function_nid": "736753c8",
+      "name": "sceClibMemmove"
+    },
+    {
+      "library_nid": "cae9ace6",
+      "function_nid": "9cc2bfdf",
+      "name": "sceClibMemcmp"
+    },
+    {
+      "library_nid": "cae9ace6",
+      "function_nid": "407d6153",
+      "name": "sceClibMemchr"
+    },
+    {
+      "library_nid": "cae9ace6",
+      "function_nid": "ac595e68",
+      "name": "sceClibStrnlen"
+    }
+  ]
+}

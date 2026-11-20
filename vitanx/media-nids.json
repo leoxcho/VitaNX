@@ -1,0 +1,642 @@
+{
+  "sources": [
+    {
+      "url": "https://raw.githubusercontent.com/vitasdk/vita-headers/master/db/360/SceGxm.yml",
+      "sha256": "30a7a772053783ecd40073c694d06c37c62ff37d228066d42765b2f51239df0d"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/vitasdk/vita-headers/master/db/360/SceDisplay.yml",
+      "sha256": "a0997e311cb050560fb10a0639ec6854a34251514462d1a4bc82784c46b97606"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/vitasdk/vita-headers/master/db/360/SceAudio.yml",
+      "sha256": "9610f18b4bdecbe84acff369323e35fecf72ee904afcdce8d42b9d91dc95ebf6"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/vitasdk/vita-headers/master/db/360/SceCtrl.yml",
+      "sha256": "30171450c7bdf31301fc3c8004ca34c4518a965a7c44b7212904691586e8496f"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/vitasdk/vita-headers/master/db/360/SceTouch.yml",
+      "sha256": "6be21a14faf69db0d38cdd5df684146dcdfabf6cdfdcf53464eb08fdcf35ef00"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/vitasdk/vita-headers/master/db/360/SceDriverUser.yml",
+      "sha256": "2607941f3aa1d770cf92677f41f8cd845a825fc24f17c7552fcd38f72e114621"
+    }
+  ],
+  "bindings": [
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "8734ff4e",
+      "name": "sceGxmBeginScene"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "ed0f6e25",
+      "name": "sceGxmColorSurfaceInit"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "e84ce5b4",
+      "name": "sceGxmCreateContext"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "207af96b",
+      "name": "sceGxmCreateRenderTarget"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "269b56be",
+      "name": "sceGxmDepthStencilSurfaceGetBackgroundDepth"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "aafc062b",
+      "name": "sceGxmDepthStencilSurfaceGetBackgroundStencil"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "2f5cc20c",
+      "name": "sceGxmDepthStencilSurfaceGetForceLoadMode"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "544aa05a",
+      "name": "sceGxmDepthStencilSurfaceGetForceStoreMode"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "ca9d41d1",
+      "name": "sceGxmDepthStencilSurfaceInit"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "a41db0d6",
+      "name": "sceGxmDepthStencilSurfaceInitDisabled"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "082200e1",
+      "name": "sceGxmDepthStencilSurfaceIsEnabled"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "32f280f0",
+      "name": "sceGxmDepthStencilSurfaceSetBackgroundDepth"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "f5d3f3e8",
+      "name": "sceGxmDepthStencilSurfaceSetBackgroundStencil"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "0c44acd7",
+      "name": "sceGxmDepthStencilSurfaceSetForceLoadMode"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "12aaa7af",
+      "name": "sceGxmDepthStencilSurfaceSetForceStoreMode"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "eddc5fb2",
+      "name": "sceGxmDestroyContext"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "0b94c50a",
+      "name": "sceGxmDestroyRenderTarget"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "bc059afc",
+      "name": "sceGxmDraw"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "fe300e2f",
+      "name": "sceGxmEndScene"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "0733d8ae",
+      "name": "sceGxmFinish"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "b0f1e4ec",
+      "name": "sceGxmInitialize"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "c61e34fc",
+      "name": "sceGxmMapMemory"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "ed8b6c69",
+      "name": "sceGxmProgramCheck"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "277794c4",
+      "name": "sceGxmProgramFindParameterByName"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "633caa54",
+      "name": "sceGxmProgramFindParameterBySemantic"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "8fa3f9c3",
+      "name": "sceGxmProgramGetDefaultUniformBufferSize"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "06ff9151",
+      "name": "sceGxmProgramGetParameter"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "d5d5fccd",
+      "name": "sceGxmProgramGetParameterCount"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "bf5e2090",
+      "name": "sceGxmProgramGetSize"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "04bb3c59",
+      "name": "sceGxmProgramGetType"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "89613ef2",
+      "name": "sceGxmProgramIsDepthReplaceUsed"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "029b4f1c",
+      "name": "sceGxmProgramIsDiscardUsed"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "e63c53d8",
+      "name": "sceGxmProgramIsSpriteCoordUsed"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "dba8d061",
+      "name": "sceGxmProgramParameterGetArraySize"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "1997dc17",
+      "name": "sceGxmProgramParameterGetCategory"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "bd2998d1",
+      "name": "sceGxmProgramParameterGetComponentCount"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "bb58267d",
+      "name": "sceGxmProgramParameterGetContainerIndex"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "6e61ddf5",
+      "name": "sceGxmProgramParameterGetIndex"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "6af88a5d",
+      "name": "sceGxmProgramParameterGetName"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "5c79d59a",
+      "name": "sceGxmProgramParameterGetResourceIndex"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "e6d9c4ce",
+      "name": "sceGxmProgramParameterGetSemantic"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "b85cc13e",
+      "name": "sceGxmProgramParameterGetSemanticIndex"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "7b9023c3",
+      "name": "sceGxmProgramParameterGetType"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "f7aa978b",
+      "name": "sceGxmProgramParameterIsSamplerCube"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "7b1fabb6",
+      "name": "sceGxmReserveFragmentDefaultUniformBuffer"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "97118913",
+      "name": "sceGxmReserveVertexDefaultUniformBuffer"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "1a68c8d2",
+      "name": "sceGxmSetBackStencilFunc"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "866a0517",
+      "name": "sceGxmSetBackStencilRef"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "a824eb24",
+      "name": "sceGxmSetFragmentDefaultUniformBuffer"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "ad2f48d9",
+      "name": "sceGxmSetFragmentProgram"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "29c34df5",
+      "name": "sceGxmSetFragmentTexture"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "14bd831f",
+      "name": "sceGxmSetFrontDepthFunc"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "f32cbf34",
+      "name": "sceGxmSetFrontDepthWriteEnable"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "b8645a9a",
+      "name": "sceGxmSetFrontStencilFunc"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "8fa6fe44",
+      "name": "sceGxmSetFrontStencilRef"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "65dd0c84",
+      "name": "sceGxmSetUniformDataF"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "c697cae5",
+      "name": "sceGxmSetVertexDefaultUniformBuffer"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "31ff8abd",
+      "name": "sceGxmSetVertexProgram"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "895df2e9",
+      "name": "sceGxmSetVertexStream"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "05032658",
+      "name": "sceGxmShaderPatcherCreate"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "4ed2e49d",
+      "name": "sceGxmShaderPatcherCreateFragmentProgram"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "b7bba6d5",
+      "name": "sceGxmShaderPatcherCreateVertexProgram"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "eaa5b100",
+      "name": "sceGxmShaderPatcherDestroy"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "2b528462",
+      "name": "sceGxmShaderPatcherRegisterProgram"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "be2743d1",
+      "name": "sceGxmShaderPatcherReleaseFragmentProgram"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "ac1ff2da",
+      "name": "sceGxmShaderPatcherReleaseVertexProgram"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "f103af8a",
+      "name": "sceGxmShaderPatcherUnregisterProgram"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "b627de66",
+      "name": "sceGxmTerminate"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "4811aecb",
+      "name": "sceGxmTextureInitLinear"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "fa695fd7",
+      "name": "sceGxmTextureSetMagFilter"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "416764e3",
+      "name": "sceGxmTextureSetMinFilter"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "4281763e",
+      "name": "sceGxmTextureSetUAddrMode"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "126cdaa3",
+      "name": "sceGxmTextureSetVAddrMode"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "62312bf8",
+      "name": "sceGxmTransferCopy"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "69ddff5e",
+      "name": "sceGxmTransferFill"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "45229c39",
+      "name": "sceGxmTransferFinish"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "828c68e8",
+      "name": "sceGxmUnmapMemory"
+    },
+    {
+      "library": "SceDisplay",
+      "library_nid": "5ed8f994",
+      "function_nid": "7178fada",
+      "name": "sceDisplayGetPrimaryHead"
+    },
+    {
+      "library": "SceDisplay",
+      "library_nid": "5ed8f994",
+      "function_nid": "a08ca60d",
+      "name": "sceDisplayGetRefreshRate"
+    },
+    {
+      "library": "SceDisplay",
+      "library_nid": "5ed8f994",
+      "function_nid": "b6fde0ba",
+      "name": "sceDisplayGetVcount"
+    },
+    {
+      "library": "SceDisplay",
+      "library_nid": "5ed8f994",
+      "function_nid": "5795e898",
+      "name": "sceDisplayWaitVblankStart"
+    },
+    {
+      "library": "SceDisplay",
+      "library_nid": "5ed8f994",
+      "function_nid": "dd0a13b8",
+      "name": "sceDisplayWaitVblankStartMulti"
+    },
+    {
+      "library": "SceAudio",
+      "library_nid": "438bb957",
+      "function_nid": "9c8edaea",
+      "name": "sceAudioOutGetConfig"
+    },
+    {
+      "library": "SceAudio",
+      "library_nid": "438bb957",
+      "function_nid": "9a5370c4",
+      "name": "sceAudioOutGetRestSample"
+    },
+    {
+      "library": "SceAudio",
+      "library_nid": "438bb957",
+      "function_nid": "5bc341e4",
+      "name": "sceAudioOutOpenPort"
+    },
+    {
+      "library": "SceAudio",
+      "library_nid": "438bb957",
+      "function_nid": "02db3f5f",
+      "name": "sceAudioOutOutput"
+    },
+    {
+      "library": "SceAudio",
+      "library_nid": "438bb957",
+      "function_nid": "69e2e6b5",
+      "name": "sceAudioOutReleasePort"
+    },
+    {
+      "library": "SceAudio",
+      "library_nid": "438bb957",
+      "function_nid": "64167f11",
+      "name": "sceAudioOutSetVolume"
+    },
+    {
+      "library": "SceCtrl",
+      "library_nid": "d197e3c7",
+      "function_nid": "ec752aaf",
+      "name": "sceCtrlGetSamplingMode"
+    },
+    {
+      "library": "SceCtrl",
+      "library_nid": "d197e3c7",
+      "function_nid": "a9c3ced6",
+      "name": "sceCtrlPeekBufferPositive"
+    },
+    {
+      "library": "SceCtrl",
+      "library_nid": "d197e3c7",
+      "function_nid": "67e7ab83",
+      "name": "sceCtrlReadBufferPositive"
+    },
+    {
+      "library": "SceCtrl",
+      "library_nid": "d197e3c7",
+      "function_nid": "a497b150",
+      "name": "sceCtrlSetSamplingMode"
+    },
+    {
+      "library": "SceTouch",
+      "library_nid": "3e4f4a81",
+      "function_nid": "41194411",
+      "name": "sceTouchDisableTouchForce"
+    },
+    {
+      "library": "SceTouch",
+      "library_nid": "3e4f4a81",
+      "function_nid": "b18370c2",
+      "name": "sceTouchEnableTouchForce"
+    },
+    {
+      "library": "SceTouch",
+      "library_nid": "3e4f4a81",
+      "function_nid": "10a2ca25",
+      "name": "sceTouchGetPanelInfo"
+    },
+    {
+      "library": "SceTouch",
+      "library_nid": "3e4f4a81",
+      "function_nid": "26531526",
+      "name": "sceTouchGetSamplingState"
+    },
+    {
+      "library": "SceTouch",
+      "library_nid": "3e4f4a81",
+      "function_nid": "ff082df0",
+      "name": "sceTouchPeek"
+    },
+    {
+      "library": "SceTouch",
+      "library_nid": "3e4f4a81",
+      "function_nid": "169a1d58",
+      "name": "sceTouchRead"
+    },
+    {
+      "library": "SceTouch",
+      "library_nid": "3e4f4a81",
+      "function_nid": "1b9c5d14",
+      "name": "sceTouchSetSamplingState"
+    },
+    {
+      "library": "SceDisplayUser",
+      "library_nid": "4faacd11",
+      "function_nid": "42ae6bbc",
+      "name": "sceDisplayGetFrameBuf"
+    },
+    {
+      "library": "SceDisplayUser",
+      "library_nid": "4faacd11",
+      "function_nid": "8848addd",
+      "name": "sceDisplayGetMaximumFrameBufResolution"
+    },
+    {
+      "library": "SceDisplayUser",
+      "library_nid": "4faacd11",
+      "function_nid": "7a410b64",
+      "name": "sceDisplaySetFrameBuf"
+    }
+  ]
+}

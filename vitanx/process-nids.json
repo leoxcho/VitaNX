@@ -1,0 +1,11 @@
+{
+  "source": "https://github.com/vitasdk/vita-headers/blob/master/db/360/SceAppMgr.yml",
+  "evidence": "Original FIOS caller tests the result for zero/nonzero. Game classification is configured only from a known CATEGORY=gd PARAM.SFO.",
+  "bindings": [
+    {
+      "library_nid": "8af17416",
+      "function_nid": "fff8f7f0",
+      "name": "sceAppMgrIsGameProgram"
+    }
+  ]
+}

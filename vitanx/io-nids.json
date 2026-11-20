@@ -1,0 +1,1 @@
+{"source":"https://github.com/vitasdk/vita-headers/blob/master/include/psp2/io/fcntl.h","bindings":[{"library_nid":"cae9ace6","function_nid":"99ba173e","name":"sceIoLseek","return_abi":"r0/r1 signed i64"}]}

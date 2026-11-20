@@ -1,0 +1,8 @@
+{
+  "imports": {
+    "9032": 888133750
+  },
+  "expected_r0": 25,
+  "expected_stdout": "Thumb C native ABI test\n",
+  "provenance": "Original C compiled as Thumb, fixed-address ELF with explicit Vita NID. No VitaSDK linking."
+}

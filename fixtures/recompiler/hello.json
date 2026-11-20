@@ -1,0 +1,9 @@
+{
+  "entry": 256,
+  "imports": {
+    "8192": 888133750
+  },
+  "expected_stdout": "vitaxnative ARM homebrew: hello native macOS!\n",
+  "expected_r0": 46,
+  "provenance": "Original synthetic ARMv7 homebrew ABI test. Fixed-address ELF32, not VitaSDK VELF or retail game."
+}

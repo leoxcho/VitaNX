@@ -1,0 +1,9 @@
+{
+  "imports": {
+    "8192": 3429349117,
+    "8200": 4256375443,
+    "8204": 3339421830
+  },
+  "expected_r0": 0,
+  "provenance": "Original ARMv7 C homebrew reads packaged app0 resource; no VitaSDK linking."
+}
