@@ -3,7 +3,6 @@
 
 #define _POSIX_C_SOURCE 200809L
 #include "vita_runtime.h"
-#include "vita_memblock_diag.h"
 #ifdef VX_ENABLE_DISPLAY
 #include "vita_display.h"
 #endif
@@ -13,18 +12,26 @@
 #ifdef VX_ENABLE_AUDIO
 #include "vita_audio.h"
 #endif
+#ifdef VX_ENABLE_NGS
+#include "vita_ngs.h"
+#endif
+#ifdef VX_ENABLE_AUDIODEC
+#include "vita_audiodec.h"
+#endif
 #ifdef VX_ENABLE_GXM
 #include "vita_gxm.h"
 #endif
 #include <errno.h>
 #include <fcntl.h>
+#include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <time.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
 /* NIDs verified against vitasdk/vita-headers db/360. No host pointers cross ABI.
-   Synchronous flat savedata0: files and nested read-only app0: assets.
+   Synchronous isolated savedata0: files and nested read-only app0: assets.
    Directories are internal traversal handles only; symlink components refused.
    Unsupported operations fail. No commercial-title compatibility is claimed. */
 #define VX_EINVAL UINT32_C(0x80010016)
@@ -84,6 +91,11 @@ const vx_import_capability *vx_runtime_import_capabilities(size_t *count) {
   {UINT32_C(0x1BD67366),"sceKernelCreateSema","core","bounded shared services; cooperative guest scheduling; no arbitrary module linking"},
   {UINT32_C(0x1D17DECF),"sceKernelExitDeleteThread","core","bounded shared services; cooperative guest scheduling; no arbitrary module linking"},
   {UINT32_C(0x34EFD876),"sceIoWrite","core","bounded shared services; cooperative guest scheduling; no arbitrary module linking"},
+  {UINT32_C(0xBCA5B623),"sceIoGetstat","core","isolated save and read-only asset paths"},
+  {UINT32_C(0x9670D39F),"sceIoMkdir","core","isolated save paths"},
+  {UINT32_C(0xE20ED0F3),"sceIoRemove","core","isolated save paths"},
+  {UINT32_C(0xF737E369),"sceIoRename","core","isolated save paths"},
+  {UINT32_C(0xE9F91EC8),"sceIoRmdir","core","isolated save paths"},
   {UINT32_C(0x99BA173E),"sceIoLseek","core","signed 64-bit offset in r2/r3; stack origin; signed 64-bit result in r0/r1"},
   {UINT32_C(0x49252B9B),"sceIoLseek32","core","bounded shared services; cooperative guest scheduling; no arbitrary module linking"},
   {UINT32_C(0x4B675D05),"sceKernelDelayThread","core","bounded shared services; cooperative guest scheduling; no arbitrary module linking"},
@@ -96,7 +108,7 @@ const vx_import_capability *vx_runtime_import_capabilities(size_t *count) {
   {UINT32_C(0xA91E15EE),"sceKernelFreeMemBlock","core","invalidates allocation UID; flat backing does not enforce unmapped-page faults"},
   {UINT32_C(0xB110C123),"sceKernelGetProcessTimeWide","core","bounded shared services; cooperative guest scheduling; no arbitrary module linking"},
   {UINT32_C(0xB8EF5818),"sceKernelGetMemBlockBase","core","bounded shared services; cooperative guest scheduling; no arbitrary module linking"},
-  {UINT32_C(0xB9D5EBDE),"sceKernelAllocMemBlock","core","page-sized USER_RW or USER_RW_UNCACHE in configured backing; checked option alignment, other option flags unsupported"},
+  {UINT32_C(0xB9D5EBDE),"sceKernelAllocMemBlock","core","page-sized USER_RW or USER_RW_UNCACHE within configured backing; null options only"},
   {UINT32_C(0xC053DC6B),"_sceKernelExitProcessForUser","core","bounded shared services; cooperative guest scheduling; no arbitrary module linking"},
   {UINT32_C(0xC70B8886),"sceIoClose","core","bounded shared services; cooperative guest scheduling; no arbitrary module linking"},
   {UINT32_C(0xCC67B6FD),"_sceIoOpen","core","bounded shared services; cooperative guest scheduling; no arbitrary module linking"},
@@ -144,6 +156,20 @@ const vx_import_capability *vx_runtime_import_capabilities(size_t *count) {
   {UINT32_C(0xBE2743D1),"sceGxmShaderPatcherReleaseFragmentProgram","gxm","bounded synchronous scene ABI; exact-byte translated shader catalog; bounded linear DF32 depth; no MSAA/blending/callbacks"},
   {UINT32_C(0xF103AF8A),"sceGxmShaderPatcherUnregisterProgram","gxm","bounded synchronous scene ABI; exact-byte translated shader catalog; bounded linear DF32 depth; no MSAA/blending/callbacks"},
   {UINT32_C(0xEAA5B100),"sceGxmShaderPatcherDestroy","gxm","bounded synchronous scene ABI; exact-byte translated shader catalog; bounded linear DF32 depth; no MSAA/blending/callbacks"},
+  {UINT32_C(0x249D5B00),"sceGxmCreateDeferredContext","gxm","bounded deferred command streams and Metal raster state"},
+  {UINT32_C(0xD6A2FF2F),"sceGxmDestroyDeferredContext","gxm","bounded deferred command streams and Metal raster state"},
+  {UINT32_C(0x944D3F83),"sceGxmBeginCommandList","gxm","bounded deferred command streams and Metal raster state"},
+  {UINT32_C(0x36D85916),"sceGxmEndCommandList","gxm","bounded deferred command streams and Metal raster state"},
+  {UINT32_C(0xE8E139DD),"sceGxmExecuteCommandList","gxm","bounded deferred command streams and Metal raster state"},
+  {UINT32_C(0xFA081D05),"sceGxmGetDeferredContextFragmentBuffer","gxm","checked deferred buffer replacement and live range tracking"},
+  {UINT32_C(0xAD8C2EBA),"sceGxmGetDeferredContextVdmBuffer","gxm","checked deferred buffer replacement and live range tracking"},
+  {UINT32_C(0x87632B9C),"sceGxmGetDeferredContextVertexBuffer","gxm","checked deferred buffer replacement and live range tracking"},
+  {UINT32_C(0xC6B3FCD0),"sceGxmSetDeferredContextFragmentBuffer","gxm","checked deferred buffer replacement and live range tracking"},
+  {UINT32_C(0x0B9D13CE),"sceGxmSetDeferredContextVdmBuffer","gxm","checked deferred buffer replacement and live range tracking"},
+  {UINT32_C(0x27CAD127),"sceGxmSetDeferredContextVertexBuffer","gxm","checked deferred buffer replacement and live range tracking"},
+  {UINT32_C(0xFD93209D),"sceGxmSetFrontPolygonMode","gxm","Metal raster state; deferred replay"},
+  {UINT32_C(0x70C86868),"sceGxmSetRegionClip","gxm","Metal raster state; deferred replay"},
+  {UINT32_C(0xE1CA72AE),"sceGxmSetCullMode","gxm","bounded deferred command streams and Metal raster state"},
   {UINT32_C(0x207AF96B),"sceGxmCreateRenderTarget","gxm","bounded synchronous scene ABI; exact-byte translated shader catalog; bounded linear DF32 depth; no MSAA/blending/callbacks"},
   {UINT32_C(0x0B94C50A),"sceGxmDestroyRenderTarget","gxm","bounded synchronous scene ABI; exact-byte translated shader catalog; bounded linear DF32 depth; no MSAA/blending/callbacks"},
   {UINT32_C(0xED0F6E25),"sceGxmColorSurfaceInit","gxm","bounded synchronous scene ABI; exact-byte translated shader catalog; bounded linear DF32 depth; no MSAA/blending/callbacks"},
@@ -190,10 +216,19 @@ const vx_import_capability *vx_runtime_import_capabilities(size_t *count) {
   {UINT32_C(0x12AAA7AF),"sceGxmDepthStencilSurfaceSetForceStoreMode","gxm","linear DF32 force load/store control"},
   {UINT32_C(0x2F5CC20C),"sceGxmDepthStencilSurfaceGetForceLoadMode","gxm","linear DF32 force load/store control"},
   {UINT32_C(0x544AA05A),"sceGxmDepthStencilSurfaceGetForceStoreMode","gxm","linear DF32 force load/store control"},
-  {UINT32_C(0xB0F1E4EC),"sceGxmInitialize","gxm","validated initialization; owned parameter/queue storage and dormant guest worker; queue submission unsupported"},
+  {UINT32_C(0xB0F1E4EC),"sceGxmInitialize","gxm","validated initialization; owned parameter/queue storage and guest display callback worker"},
+  {UINT32_C(0x6A6013E1),"sceGxmSyncObjectCreate","gxm","synchronous Metal completion and cooperative display queue"},
+  {UINT32_C(0x889AE88C),"sceGxmSyncObjectDestroy","gxm","synchronous Metal completion and cooperative display queue"},
+  {UINT32_C(0xEC5C26B5),"sceGxmDisplayQueueAddEntry","gxm","synchronous Metal completion and cooperative display queue"},
+  {UINT32_C(0xB98C5B0D),"sceGxmDisplayQueueFinish","gxm","synchronous Metal completion and cooperative display queue"},
+  {UINT32_C(0x9F448E79),"sceGxmNotificationWait","gxm","synchronous Metal completion and cooperative display queue"},
   {UINT32_C(0xB627DE66),"sceGxmTerminate","gxm","synchronous lifecycle"},
   {UINT32_C(0xC61E34FC),"sceGxmMapMemory","gxm","bounded page-aligned guest GPU read/write mappings"},
   {UINT32_C(0x828C68E8),"sceGxmUnmapMemory","gxm","bounded guest GPU mapping removal"},
+  {UINT32_C(0x008402C6),"sceGxmMapFragmentUsseMemory","gxm","tracked guest USSE address range"},
+  {UINT32_C(0xFA437510),"sceGxmMapVertexUsseMemory","gxm","tracked guest USSE address range"},
+  {UINT32_C(0x80CCEDBB),"sceGxmUnmapFragmentUsseMemory","gxm","tracked guest USSE address range"},
+  {UINT32_C(0x099134F5),"sceGxmUnmapVertexUsseMemory","gxm","tracked guest USSE address range"},
   {UINT32_C(0x62312BF8),"sceGxmTransferCopy","gxm","synchronous Metal linear same-format copy; no sync objects or color keys"},
   {UINT32_C(0x69DDFF5E),"sceGxmTransferFill","gxm","synchronous Metal linear fill; no sync objects"},
   {UINT32_C(0x45229C39),"sceGxmTransferFinish","gxm","all supported transfers complete before return"},
@@ -206,17 +241,34 @@ const vx_import_capability *vx_runtime_import_capabilities(size_t *count) {
   {UINT32_C(0x41194411),"sceTouchDisableTouchForce","window","one virtual contact per panel; mouse/trackpad pointer; normalized virtual panel; no hardware multitouch history"},
   {UINT32_C(0xFF082DF0),"sceTouchPeek","window","one virtual contact per panel; mouse/trackpad pointer; normalized virtual panel; no hardware multitouch history"},
   {UINT32_C(0x169A1D58),"sceTouchRead","window","one virtual contact per panel; mouse/trackpad pointer; normalized virtual panel; no hardware multitouch history"},
+  {UINT32_C(0x104ED1A7),"sceCtrlPeekBufferNegative","window","single handheld controller and host snapshots"},
+  {UINT32_C(0x81A89660),"sceCtrlPeekBufferNegative2","window","single handheld controller and host snapshots"},
+  {UINT32_C(0x15F81E8C),"sceCtrlPeekBufferPositive2","window","single handheld controller and host snapshots"},
+  {UINT32_C(0xA59454D3),"sceCtrlPeekBufferPositiveExt","window","single handheld controller and host snapshots"},
+  {UINT32_C(0x860BF292),"sceCtrlPeekBufferPositiveExt2","window","single handheld controller and host snapshots"},
+  {UINT32_C(0x15F96FB0),"sceCtrlReadBufferNegative","window","single handheld controller and host snapshots"},
+  {UINT32_C(0x27A0C5FB),"sceCtrlReadBufferNegative2","window","single handheld controller and host snapshots"},
+  {UINT32_C(0xC4226A3E),"sceCtrlReadBufferPositive2","window","single handheld controller and host snapshots"},
+  {UINT32_C(0xE2D99296),"sceCtrlReadBufferPositiveExt","window","single handheld controller and host snapshots"},
+  {UINT32_C(0xA7178860),"sceCtrlReadBufferPositiveExt2","window","single handheld controller and host snapshots"},
+  {UINT32_C(0xB1DC4378),"sceCtrlSetSamplingModeExt","window","single handheld controller and host snapshots"},
+  {UINT32_C(0xBD27F830),"sceCtrlGetSamplingModeExt","window","single handheld controller and host snapshots"},
+  {UINT32_C(0x324F1B66),"sceCtrlGetControllerPortInfo","window","single handheld controller and host snapshots"},
+  {UINT32_C(0x1FFFD965),"sceCtrlIsMultiControllerSupported","window","single handheld controller and host snapshots"},
   {UINT32_C(0x67E7AB83),"sceCtrlReadBufferPositive","window","host snapshots and modeled 60Hz blocking reads; port zero; one sample"},
   {UINT32_C(0xA497B150),"sceCtrlSetSamplingMode","window","host snapshots and modeled 60Hz blocking reads; port zero; one sample"},
   {UINT32_C(0xA9C3CED6),"sceCtrlPeekBufferPositive","window","host snapshots and modeled 60Hz blocking reads; port zero; one sample"},
   {UINT32_C(0xEC752AAF),"sceCtrlGetSamplingMode","window","host snapshots and modeled 60Hz blocking reads; port zero; one sample"},
 #endif
 #ifdef VX_ENABLE_AUDIO
+  {UINT32_C(0x12FB1767),"sceAudioOutGetAdopt","audio","CoreAudio PCM output ports"},
+  {UINT32_C(0x940CE469),"sceAudioOutSetAlcMode","audio","CoreAudio PCM output ports"},
   {UINT32_C(0x9A5370C4),"sceAudioOutGetRestSample","audio","queued sample count at buffer granularity; three-buffer S16 PCM AudioQueue output"},
   {UINT32_C(0x02DB3F5F),"sceAudioOutOutput","audio","bounded S16 PCM output; no codec decoding"},
   {UINT32_C(0x5BC341E4),"sceAudioOutOpenPort","audio","bounded S16 PCM output; no codec decoding"},
   {UINT32_C(0x64167F11),"sceAudioOutSetVolume","audio","bounded S16 PCM output; no codec decoding"},
   {UINT32_C(0x69E2E6B5),"sceAudioOutReleasePort","audio","bounded S16 PCM output; no codec decoding"},
+  {UINT32_C(0xB8BA0D07),"sceAudioOutSetConfig","audio","preserves port identity and volume across PCM reconfiguration"},
   {UINT32_C(0x9C8EDAEA),"sceAudioOutGetConfig","audio","bounded S16 PCM output; no codec decoding"},
 #endif
  };
@@ -225,8 +277,6 @@ const vx_import_capability *vx_runtime_import_capabilities(size_t *count) {
 }
 
 static _Thread_local uint32_t memory_base;
-static _Thread_local uint32_t memblock_failure_reason;
-uint32_t vx_runtime_memblock_failure_reason(void){return memblock_failure_reason;}
 /* VitaSDK sysmem.h and db/360/SceSysmem.yml. A bounded first-fit guest arena,
    not an implementation of physical/VRAM allocation or arbitrary mappings. */
 #define K_ARGUMENT UINT32_C(0x80020005)
@@ -240,8 +290,9 @@ typedef struct { uint32_t uid,base,size; } memory_block;
 typedef struct { uint32_t uid,count,maximum; } semaphore;
 static _Thread_local memory_block blocks[32];
 static _Thread_local semaphore semaphores[32];
-static _Thread_local uint32_t heap_start,heap_capacity,next_uid=0x10000,sampling_mode;
+static _Thread_local uint32_t heap_start,heap_capacity,next_uid=0x10000;
 #ifdef VX_ENABLE_WINDOW
+static _Thread_local uint32_t sampling_mode,sampling_mode_ext;
 static _Thread_local uint64_t ctrl_last_read_us,touch_last_read_us[2];
 static _Thread_local uint32_t touch_sampling[2],touch_force[2];
 #endif
@@ -302,11 +353,11 @@ static uint32_t err(void) {
   case ENOENT:e=2;break;case EIO:e=5;break;case EBADF:e=9;break;
   case EACCES:e=13;break;case EEXIST:e=17;break;case ENOTDIR:e=20;break;
   case EISDIR:e=21;break;case EMFILE:e=24;break;case ENOSPC:e=28;break;
-  case EFBIG:e=27;break;case EROFS:e=30;break;case ELOOP:e=40;break;default:e=22;break;
+  case EFBIG:e=27;break;case EROFS:e=30;break;case ENOTEMPTY:e=39;break;case ELOOP:e=40;break;default:e=22;break;
  }
  return UINT32_C(0x80010000)|e;
 }
-int vx_runtime_mount(const char *path) { init(); if(root>=0)return -1;root=open(path,O_RDONLY|O_DIRECTORY|O_NOFOLLOW);return root<0?-1:0; }
+int vx_runtime_mount(const char *path) { init(); if(root>=0)return -1;root=open(path,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);return root<0?-1:0; }
 int vx_runtime_mount_app(const char *path) { init();if(app_root>=0)return -1;app_root=open(path,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);return app_root<0?-1:0; }
 void vx_runtime_shutdown(void) {
 #ifdef VX_ENABLE_GXM
@@ -315,40 +366,220 @@ void vx_runtime_shutdown(void) {
 #ifdef VX_ENABLE_AUDIO
  vx_audio_shutdown();
 #endif
+#ifdef VX_ENABLE_NGS
+ vx_ngs_shutdown();
+#endif
+#ifdef VX_ENABLE_AUDIODEC
+ vx_audiodec_shutdown();
+#endif
 #ifdef VX_ENABLE_DISPLAY
  vx_display_shutdown();
 #endif
  kernel_reset();memset(blocks,0,sizeof blocks);memset(semaphores,0,sizeof semaphores);
- heap_start=heap_capacity=sampling_mode=memblock_failure_reason=0;next_uid=0x10000;
+ heap_start=heap_capacity=0;next_uid=0x10000;
 #ifdef VX_ENABLE_WINDOW
- ctrl_last_read_us=0;memset(touch_sampling,0,sizeof touch_sampling);memset(touch_force,0,sizeof touch_force);memset(touch_last_read_us,0,sizeof touch_last_read_us);
+ sampling_mode=sampling_mode_ext=0;ctrl_last_read_us=0;memset(touch_sampling,0,sizeof touch_sampling);memset(touch_force,0,sizeof touch_force);memset(touch_last_read_us,0,sizeof touch_last_read_us);
 #endif
  init();for(int i=0;i<32;i++)if(files[i]>=0){close(files[i]);files[i]=-1;}if(root>=0)close(root);root=-1;if(app_root>=0)close(app_root);app_root=-1;vx_runtime_reset_stop();process_epoch_ready=0;process_epoch_ns=0;memory_base=0; }
-/* Path already bounded by the guest string limit. Validate all components first,
-   then pin every directory with openat: no symlink or parent path can escape. */
-static int open_asset(const char *name) {
- char path[240];size_t n=strlen(name);
- if(!n||n>=sizeof path||strchr(name,'\\')){errno=EINVAL;return -1;}
- memcpy(path,name,n+1);
+/* Pin each intermediate component below the mounted directory. The returned
+   descriptor owns a reference even when the path has just one component. */
+static int io_parent(int mount,const char *name,int save,char path[240],const char **leaf) {
+ size_t length=strlen(name);
+ if(!length||length>=240||strchr(name,'\\')||(save&&strchr(name,':'))){errno=EINVAL;return -1;}
+ memcpy(path,name,length+1);
+ int dir=fcntl(mount,F_DUPFD_CLOEXEC,0);
+ if(dir<0)return -1;
  for(char *part=path;;){
   char *slash=strchr(part,'/');if(slash)*slash=0;
-  if(!*part||!strcmp(part,".")||!strcmp(part,"..")){errno=EINVAL;return -1;}
-  if(!slash)break;part=slash+1;
- }
- memcpy(path,name,n+1);int dir=app_root,owned=0;
- for(char *part=path;;){
-  char *slash=strchr(part,'/');if(slash)*slash=0;
-  int fd=openat(dir,part,O_RDONLY|O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC|(slash?O_DIRECTORY:0));
-  int saved=errno;if(owned)close(dir);
-  if(fd<0){errno=saved;return -1;}
-  if(!slash)return fd;
-  dir=fd;owned=1;part=slash+1;
+  if(!*part||!strcmp(part,".")||!strcmp(part,"..")||(save&&!strncasecmp(part,".vitanx-",8))){
+   close(dir);errno=EINVAL;return -1;
+  }
+  if(!slash){*leaf=part;return dir;}
+  int next=openat(dir,part,O_RDONLY|O_NOFOLLOW|O_DIRECTORY|O_CLOEXEC);
+  int saved=errno;
+  close(dir);
+  if(next<0){errno=saved;return -1;}
+  dir=next;part=slash+1;
  }
 }
+static int io_open(int mount,const char *name,int save,int flags) {
+ char path[240];const char *leaf;
+ int dir=io_parent(mount,name,save,path,&leaf);
+ if(dir<0)return -1;
+ int fd=openat(dir,leaf,flags|O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC,0600);
+ int saved=errno;close(dir);errno=saved;
+ return fd;
+}
+static const char *io_save_name(uint32_t ptr,uint8_t *mem,size_t size) {
+ if(!range(ptr,1,size))return NULL;
+ const char *name=(const char *)guest_ptr(mem,ptr);
+ size_t available=size-(size_t)(ptr-memory_base);
+ size_t limit=available<240?available:240;
+ const char *end=memchr(name,0,limit);
+ if(!end||end-name<=10||strncmp(name,"savedata0:",10))return NULL;
+ name+=10;
+ return *name=='/'?name+1:name;
+}
+/* VitaSDK SceIoStat, with explicit on-wire type bits and UTC timestamps. */
+typedef struct {uint16_t year,month,day,hour,minute,second;uint32_t usec;} guest_io_date;
+typedef struct {
+ uint32_t mode,attr;
+ uint64_t size;
+ guest_io_date created,accessed,modified;
+ uint32_t device_private[6];
+} guest_io_stat;
+_Static_assert(sizeof(guest_io_stat)==0x58,"Vita stat layout");
+static guest_io_date io_date(struct timespec stamp) {
+ struct tm value;
+ if(!gmtime_r(&stamp.tv_sec,&value)||value.tm_year < -1900||value.tm_year>63635)return (guest_io_date){0};
+ return (guest_io_date){value.tm_year+1900,value.tm_mon+1,value.tm_mday,
+                        value.tm_hour,value.tm_min,value.tm_sec,(uint32_t)(stamp.tv_nsec/1000)};
+}
+static uint32_t io_getstat(uint32_t *r,uint8_t *mem,size_t size) {
+ if(!range(r[0],1,size)||!r[1]||!range(r[1],sizeof(guest_io_stat),size))return VX_EINVAL;
+ const char *name=(const char *)guest_ptr(mem,r[0]);
+ size_t available=size-(size_t)(r[0]-memory_base);
+ size_t limit=available<240?available:240;
+ const char *end=memchr(name,0,limit);
+ if(!end)return VX_EINVAL;
+ int save=end-name>=10&&!strncmp(name,"savedata0:",10);
+ int asset=end-name>=5&&!strncmp(name,"app0:",5);
+ int mount=save?root:app_root;
+ if((!save&&!asset)||mount<0)return VX_EINVAL;
+ name+=save?10:5;
+ if(*name=='/')name++;
+ struct stat st;
+ int status;
+ if(!*name)status=fstat(mount,&st);
+ else{
+  char path[240];const char *leaf;
+  int dir=io_parent(mount,name,save,path,&leaf);
+  if(dir<0)return err();
+  status=fstatat(dir,leaf,&st,AT_SYMLINK_NOFOLLOW);
+  int saved=errno;close(dir);errno=saved;
+ }
+ if(status)return err();
+ if(!S_ISREG(st.st_mode)&&!S_ISDIR(st.st_mode))return VX_EINVAL;
+ uint32_t kind=S_ISDIR(st.st_mode)?0x1000:0x2000;
+ guest_io_stat info={.mode=kind|(st.st_mode&0700),.attr=kind>>8,.size=S_ISREG(st.st_mode)?(uint64_t)st.st_size:0};
+#ifdef __APPLE__
+ info.created=io_date(st.st_birthtimespec);
+ info.accessed=io_date(st.st_atimespec);
+ info.modified=io_date(st.st_mtimespec);
+#else
+ info.created=io_date(st.st_ctim);
+ info.accessed=io_date(st.st_atim);
+ info.modified=io_date(st.st_mtim);
+#endif
+ vx_guest_memory_written();
+ memcpy(guest_ptr(mem,r[1]),&info,sizeof info);
+ return 0;
+}
+static uint32_t io_save_mutation(uint32_t nid,uint32_t *r,uint8_t *mem,size_t size) {
+ const char *name=io_save_name(r[0],mem,size);
+ if(root<0||!name)return VX_EINVAL;
+ char path[240];const char *leaf;
+ int dir=io_parent(root,name,1,path,&leaf);
+ if(dir<0)return err();
+ uint32_t result=0;
+ if(nid==UINT32_C(0x9670D39F)){
+  if(mkdirat(dir,leaf,0700))result=err();
+ }else if(nid==UINT32_C(0xF737E369)){
+  char target[240];const char *target_leaf;
+  const char *target_name=io_save_name(r[1],mem,size);
+  if(!target_name)result=VX_EINVAL;
+  else{
+   int target_dir=io_parent(root,target_name,1,target,&target_leaf);
+   if(target_dir<0)result=err();
+   else{
+    if(renameat(dir,leaf,target_dir,target_leaf))result=err();
+    close(target_dir);
+   }
+  }
+ }else if(unlinkat(dir,leaf,nid==UINT32_C(0xE9F91EC8)?AT_REMOVEDIR:0)){
+  result=err();
+ }
+ close(dir);
+ return result;
+}
+#ifdef VX_ENABLE_WINDOW
+enum {CTRL_VALID=1,CTRL_READ=2,CTRL_NEGATIVE=4,CTRL_WIRELESS=8,CTRL_STICK_BUTTONS=16,CTRL_EXT_MODE=32};
+static unsigned ctrl_import_flags(uint32_t nid){
+  switch(nid){
+   case UINT32_C(0xA9C3CED6):return CTRL_VALID;
+   case UINT32_C(0x67E7AB83):return CTRL_VALID | CTRL_READ;
+   case UINT32_C(0x104ED1A7):return CTRL_VALID | CTRL_NEGATIVE;
+   case UINT32_C(0x81A89660):return CTRL_VALID | CTRL_NEGATIVE | CTRL_WIRELESS;
+   case UINT32_C(0x15F81E8C):return CTRL_VALID | CTRL_WIRELESS;
+   case UINT32_C(0xA59454D3):return CTRL_VALID | CTRL_EXT_MODE;
+   case UINT32_C(0x860BF292):return CTRL_VALID | CTRL_WIRELESS | CTRL_STICK_BUTTONS | CTRL_EXT_MODE;
+   case UINT32_C(0x15F96FB0):return CTRL_VALID | CTRL_READ | CTRL_NEGATIVE;
+   case UINT32_C(0x27A0C5FB):return CTRL_VALID | CTRL_READ | CTRL_NEGATIVE | CTRL_WIRELESS;
+   case UINT32_C(0xC4226A3E):return CTRL_VALID | CTRL_READ | CTRL_WIRELESS;
+   case UINT32_C(0xE2D99296):return CTRL_VALID | CTRL_READ | CTRL_EXT_MODE;
+   case UINT32_C(0xA7178860):return CTRL_VALID | CTRL_READ | CTRL_WIRELESS | CTRL_STICK_BUTTONS | CTRL_EXT_MODE;
+   default:return 0;
+  }
+}
+
+static uint32_t window_read_input(uint32_t nid,uint32_t port,uint32_t address,uint8_t *mem){
+ vx_window_input input;
+ if(vx_display_input_state(&input))return VX_ENOSYS;
+ uint64_t us=0;process_time(&us);
+ uint8_t *sample=guest_ptr(mem,address);
+ unsigned flags=ctrl_import_flags(nid);
+ memset(sample,0,flags?32:144);
+ for(unsigned i=0;i<8;i++)sample[i]=(uint8_t)(us>>(i*8));
+ if(flags){
+  uint32_t buttons=input.buttons;
+  if(flags&CTRL_WIRELESS){
+   buttons=(buttons&~UINT32_C(0x300))|input.ext_buttons;
+   if(!(flags&CTRL_STICK_BUTTONS))buttons&=~6u;
+  }else buttons&=~UINT32_C(0x0c06);
+  write32(sample+8,flags&CTRL_NEGATIVE?~buttons:buttons);
+  uint32_t mode=flags&CTRL_EXT_MODE?sampling_mode_ext:sampling_mode;
+  sample[12]=mode?input.lx:128;sample[13]=mode?input.ly:128;
+  sample[14]=mode?input.rx:128;sample[15]=mode?input.ry:128;
+  for(unsigned i=0;i<12;i++)sample[16+i]=(buttons&(UINT32_C(0x10)<<i))?255:0;
+  if(flags&CTRL_WIRELESS){
+   sample[20]=input.left_trigger;sample[21]=input.right_trigger;
+  }
+  if(flags&CTRL_READ)ctrl_last_read_us=us;
+ }else{
+  if(touch_sampling[port]&&input.touch_down[port]){
+   write32(sample+12,1);sample[16]=input.touch_id[port];sample[17]=touch_force[port]?128:0;
+   uint16_t x=input.touch_x[port]>1919?1919:input.touch_x[port];
+   uint16_t y=input.touch_y[port]>1087?1087:input.touch_y[port];
+   sample[18]=(uint8_t)x;sample[19]=(uint8_t)(x>>8);
+   sample[20]=(uint8_t)y;sample[21]=(uint8_t)(y>>8);
+  }
+  if(nid==UINT32_C(0x169A1D58))touch_last_read_us[port]=us;
+ }
+ return 1;
+}
+#endif
 #include "vita_kernel.inc"
+#ifdef VX_ENABLE_WINDOW
+static uint32_t window_read(uint32_t nid,uint32_t port,uint32_t address,uint8_t *mem,uint64_t last_read){
+ uint64_t now;
+ if(last_read&&!process_time(&now)&&now<last_read+16667){
+  uint64_t deadline=last_read+16667;
+  if(kernel_active){
+   kernel_thread *t=&kernel_threads[kernel_current];
+   t->wait=(kernel_wait){.kind=KW_INPUT,.object=port,.mode=nid,.out=address,
+                        .deadline=deadline,.ticket=++kernel_ticket};
+   t->state=KT_WAIT;kernel_stats.waits++;
+   return 0;
+  }
+  struct timespec delay={0,(long)((deadline-now)*1000)};
+  while(nanosleep(&delay,&delay)&&errno==EINTR){}
+ }
+ return window_read_input(nid,port,address,mem);
+}
+#endif
+
 #ifdef VX_ENABLE_GXM
-/* GXM owns a dormant callback worker; queue submission is deliberately not
-   bound yet. Reserve its guest stack in the existing memory-block arena so it
+/* Reserve the GXM guest worker stack in the existing memory-block arena so it
    cannot overlap game allocations. No host pointer enters guest state. */
 static uint32_t gxm_queue_worker_create(uint32_t entry,uint32_t *worker,uint8_t *mem,size_t size){
  if(!kernel_active)return UINT32_C(0x805b0017);
@@ -391,6 +622,9 @@ uint32_t vx_import_vfp(uint32_t nid,uint32_t r[16],uint32_t f[64],uint8_t *mem,s
  return vx_import(nid,r,mem,size);
 }
 uint32_t vx_import(uint32_t nid,uint32_t r[16],uint8_t *mem,size_t size) {
+#ifdef VX_ENABLE_WINDOW
+ unsigned flags;
+#endif
  vx_guest_memory_written();
  init();uint32_t result=VX_ENOSYS;
  /* Official VitaSDK SceLibKernel/SceProcessmgr/SceKernelThreadMgr exports.
@@ -407,51 +641,18 @@ uint32_t vx_import(uint32_t nid,uint32_t r[16],uint8_t *mem,size_t size) {
  else if(nid==UINT32_C(0xE5AA625C))result=1; /* sceKernelGetStdout */
  else if(nid==UINT32_C(0xFA5E3ADA))result=2; /* sceKernelGetStderr */
  else if(nid==UINT32_C(0xB9D5EBDE)) { /* sceKernelAllocMemBlock */
-  /* VitaSDK SceKernelAllocMemBlockOpt is 0x40 bytes. Its documented
-     HAS_ALIGNMENT (bit 2) is supported; placement, physical and sharing
-     options are not modeled in this flat guest arena. */
-  uint32_t alignment=4096;memblock_failure_reason=VX_MEMBLOCK_OK;
-  if(!r[0]||!range(r[0],1,size)){
-   result=K_ADDRESS;memblock_failure_reason=VX_MEMBLOCK_BAD_NAME;
-  }
-  else if(!guest_name(mem,r[0],size)){
-   result=K_ADDRESS;memblock_failure_reason=VX_MEMBLOCK_NAME_UNTERMINATED;
-  }
-  else if(r[1]!=UINT32_C(0x0C20D060)&&r[1]!=UINT32_C(0x0C208060)){
-   result=UINT32_C(0x8002000C);memblock_failure_reason=VX_MEMBLOCK_UNSUPPORTED_TYPE;
-  }
-  else if(!r[2]||(r[2]&4095)){result=UINT32_C(0x8002000B);memblock_failure_reason=VX_MEMBLOCK_BAD_SIZE;}
-  else if(r[3]){
-   if(!range(r[3],4,size)){result=K_ADDRESS;memblock_failure_reason=VX_MEMBLOCK_BAD_OPTIONS_ADDRESS;}
-   else {
-    uint32_t declared=read32(guest_ptr(mem,r[3]));
-    if(declared<12||declared>64){result=K_ARGUMENT;memblock_failure_reason=VX_MEMBLOCK_UNSUPPORTED_OPTIONS;}
-    else if(!range(r[3],declared,size)){result=K_ADDRESS;memblock_failure_reason=VX_MEMBLOCK_BAD_OPTIONS_ADDRESS;}
-    else {
-     uint32_t attr=read32(guest_ptr(mem,r[3])+4);
-     if(attr&~UINT32_C(0x4)){result=VX_ENOSYS;memblock_failure_reason=VX_MEMBLOCK_UNSUPPORTED_OPTIONS;}
-     else if(attr&4){
-      alignment=read32(guest_ptr(mem,r[3])+8);
-      if(alignment<4096||alignment>UINT32_C(0x10000000)||(alignment&(alignment-1))){
-       result=K_ARGUMENT;memblock_failure_reason=VX_MEMBLOCK_BAD_ALIGNMENT;
-      }
-     }
-    }
-   }
-  }
-  if(memblock_failure_reason==VX_MEMBLOCK_OK&&!heap_capacity){
-   result=K_MEMORY;memblock_failure_reason=VX_MEMBLOCK_INVALID_HEAP;
-  }
-  else if(memblock_failure_reason==VX_MEMBLOCK_OK&&!range(heap_start,heap_capacity,size)){
-   result=K_MEMORY;memblock_failure_reason=VX_MEMBLOCK_INVALID_HEAP;
-  }
-  if(memblock_failure_reason==VX_MEMBLOCK_OK){
-   result=K_MEMORY;memblock_failure_reason=VX_MEMBLOCK_OUT_OF_MEMORY;memory_block *slot=0;
+  /* Memblock names may be truncated to the kernel object name width.
+     Require either a readable prefix or a terminator before backing ends. */
+  if(!r[0]||(!range(r[0],32,size)&&!guest_name(mem,r[0],size)))result=K_ADDRESS;
+  else if(r[1]!=UINT32_C(0x0C20D060)&&r[1]!=UINT32_C(0x0C208060))result=UINT32_C(0x8002000C);
+  else if(!r[2]||(r[2]&4095))result=UINT32_C(0x8002000B);
+  else if(r[3])result=range(r[3],64,size)?VX_ENOSYS:K_ADDRESS;
+  else if(!heap_capacity||!range(heap_start,heap_capacity,size))result=K_MEMORY;
+  else {
+   result=K_MEMORY;memory_block *slot=0;
    for(int i=0;i<32;i++)if(!blocks[i].uid){slot=&blocks[i];break;}
    uint64_t candidate=heap_start,end=(uint64_t)heap_start+heap_capacity;
    if(slot)for(int pass=0;pass<=32&&candidate+r[2]<=end;pass++){
-    candidate=(candidate+alignment-1)&~((uint64_t)alignment-1);
-    if(candidate+r[2]>end)break;
     uint64_t next=candidate;
     for(int i=0;i<32;i++)if(blocks[i].uid&&candidate<(uint64_t)blocks[i].base+blocks[i].size&&blocks[i].base<candidate+r[2]){
      uint64_t after=(uint64_t)blocks[i].base+blocks[i].size;if(after>next)next=after;
@@ -459,8 +660,7 @@ uint32_t vx_import(uint32_t nid,uint32_t r[16],uint8_t *mem,size_t size) {
     if(next!=candidate){candidate=next;continue;}
     if(next_uid>=INT32_MAX)break;
     *slot=(memory_block){next_uid++,(uint32_t)candidate,r[2]};
-    memset(guest_ptr(mem,slot->base),0,slot->size);vx_guest_memory_written();
-    result=slot->uid;memblock_failure_reason=VX_MEMBLOCK_OK;break;
+    memset(guest_ptr(mem,slot->base),0,slot->size);result=slot->uid;break;
    }
   }
  }
@@ -516,45 +716,28 @@ uint32_t vx_import(uint32_t nid,uint32_t r[16],uint8_t *mem,size_t size) {
  }
  else if(nid==UINT32_C(0xFF082DF0)||nid==UINT32_C(0x169A1D58)){
   if(r[0]>1||!r[2]||r[2]>64||!r[1]||!range(r[1],144,size))result=UINT32_C(0x80350001);
-  else{uint64_t us=0;process_time(&us);
-   if(nid==UINT32_C(0x169A1D58)&&touch_last_read_us[r[0]]&&us<touch_last_read_us[r[0]]+16667){struct timespec delay={0,(long)((touch_last_read_us[r[0]]+16667-us)*1000)};while(nanosleep(&delay,&delay)&&errno==EINTR){}}
-   vx_window_input input;
-   if(vx_display_input_state(&input))result=VX_ENOSYS;
-   else{uint8_t *p=guest_ptr(mem,r[1]);memset(p,0,144);process_time(&us);for(int i=0;i<8;i++)p[i]=(uint8_t)(us>>(i*8));
-    unsigned panel=r[0];if(touch_sampling[panel]&&input.touch_down[panel]){write32(p+12,1);p[16]=input.touch_id[panel];p[17]=touch_force[panel]?128:0;uint16_t x=input.touch_x[panel]>1919?1919:input.touch_x[panel],y=input.touch_y[panel]>1087?1087:input.touch_y[panel];p[18]=(uint8_t)x;p[19]=(uint8_t)(x>>8);p[20]=(uint8_t)y;p[21]=(uint8_t)(y>>8);}
-    if(nid==UINT32_C(0x169A1D58))touch_last_read_us[panel]=us;result=1;
-   }
-  }
+  else result=window_read(nid,r[0],r[1],mem,nid==UINT32_C(0x169A1D58)?touch_last_read_us[r[0]]:0);
  }
- else if(nid==UINT32_C(0xA497B150)) {
-  if(r[0]>1)result=K_ARGUMENT;else {result=sampling_mode;sampling_mode=r[0];}
+ else if(nid==UINT32_C(0xA497B150)||nid==UINT32_C(0xB1DC4378)) {
+  uint32_t *mode=nid==UINT32_C(0xA497B150)?&sampling_mode:&sampling_mode_ext;
+  if(r[0]>2)result=K_ARGUMENT;else {result=*mode;*mode=r[0];}
  }
- else if(nid==UINT32_C(0xEC752AAF)) {
-  if(!r[0]||!range(r[0],4,size))result=K_ADDRESS;else {write32(guest_ptr(mem,r[0]),sampling_mode);result=0;}
+ else if(nid==UINT32_C(0xEC752AAF)||nid==UINT32_C(0xBD27F830)) {
+  uint32_t mode=nid==UINT32_C(0xEC752AAF)?sampling_mode:sampling_mode_ext;
+  if(!r[0]||!range(r[0],4,size))result=K_ADDRESS;else {write32(guest_ptr(mem,r[0]),mode);result=0;}
  }
- else if(nid==UINT32_C(0xA9C3CED6)||nid==UINT32_C(0x67E7AB83)) {
-  if(r[0]||!r[2]||r[2]>64)result=K_ARGUMENT;
+ else if(nid==UINT32_C(0x324F1B66)) {
+  if(!r[0]||!range(r[0],16,size))result=K_ADDRESS;
+  else {uint8_t *ports=guest_ptr(mem,r[0]);memset(ports,0,16);ports[0]=1;result=0;}
+ }
+ else if(nid==UINT32_C(0x1FFFD965))result=0;
+ else if((flags=ctrl_import_flags(nid))!=0){
+  if(r[0]>(flags&CTRL_WIRELESS?4u:0u)||!r[2]||r[2]>64)result=K_ARGUMENT;
   else if(!r[1]||!range(r[1],32,size))result=K_ADDRESS;
-  else {vx_window_input input;uint64_t us=0;
-   /* A blocking read waits for the next modeled 60Hz sample. Peek never waits.
-      This is host polling, not Vita hardware interrupts or buffered history. */
-   if(nid==UINT32_C(0x67E7AB83)&&!process_time(&us)&&ctrl_last_read_us&&us<ctrl_last_read_us+16667){
-    uint64_t wait=ctrl_last_read_us+16667-us;
-    struct timespec delay={0,(long)(wait*1000)};
-    while(nanosleep(&delay,&delay)&&errno==EINTR){}
-   }
-   if(vx_display_input_state(&input))result=VX_ENOSYS;
-   else {uint8_t *pad=guest_ptr(mem,r[1]);memset(pad,0,32);process_time(&us);
-    for(int i=0;i<8;i++)pad[i]=(uint8_t)(us>>(i*8));write32(pad+8,input.buttons);
-    pad[12]=sampling_mode?input.lx:128;pad[13]=sampling_mode?input.ly:128;
-    pad[14]=sampling_mode?input.rx:128;pad[15]=sampling_mode?input.ry:128;
-    const uint32_t button_masks[12]={0x10,0x20,0x40,0x80,0x100,0x200,0x400,0x800,0x1000,0x2000,0x4000,0x8000};
-    for(int i=0;i<12;i++)pad[16+i]=(input.buttons&button_masks[i])?255:0;
-    if(nid==UINT32_C(0x67E7AB83))ctrl_last_read_us=us;
-    result=1;
-   }
-  }
+  else if(r[0])result=0; /* The virtual handheld has only its built-in port. */
+  else result=window_read(nid,r[0],r[1],mem,flags&CTRL_READ?ctrl_last_read_us:0);
  }
+
 #endif
  /* VitaSDK processmgr.h returns wide clocks in r0/r1; pointer clocks use
     guest little-endian uint64 storage. Time starts at this runtime instance. */
@@ -586,13 +769,13 @@ uint32_t vx_import(uint32_t nid,uint32_t r[16],uint8_t *mem,size_t size) {
      result=VX_EMFILE;for(int i=0;i<32;i++)if(files[i]<0){int host=dup(s[3]=='2'?2:1);if(host<0)result=err();else{files[i]=host;consoles[i]=1;result=(uint32_t)i+3;}break;}
     }
     else if(asset&&app_root>=0&&f!=1)result=UINT32_C(0x8001001e); /* read-only mount */
-    else if((asset&&app_root>=0)||(save&&root>=0&&*name&&!strchr(name,'/')&&!strchr(name,'\\')&&strcmp(name,".")&&strcmp(name,".."))) {
-     if(!(f&~UINT32_C(0x703))&&(f&3)>=1&&(f&3)<=3) {
+    else if((asset&&app_root>=0)||(save&&root>=0)) {
+     if(!(f&~UINT32_C(0xF03))&&(f&3)>=1&&(f&3)<=3&&(!(f&0x800)||(f&0x200))) {
       int flags=(f&3)==1?O_RDONLY:((f&3)==2?O_WRONLY:O_RDWR);
-      if(f&0x100)flags|=O_APPEND;if(f&0x200)flags|=O_CREAT;if(f&0x400)flags|=O_TRUNC;
+      if(f&0x100)flags|=O_APPEND;if(f&0x200)flags|=O_CREAT;if(f&0x400)flags|=O_TRUNC;if(f&0x800)flags|=O_EXCL;
       result=VX_EMFILE;
       for(int i=0;i<32;i++)if(files[i]<0){
-       int host=asset?open_asset(name):openat(root,name,flags|O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC,0600);
+       int host=io_open(asset?app_root:root,name,save,flags);
        if(host<0)result=err();else {
         struct stat st;
         if(fstat(host,&st)||!S_ISREG(st.st_mode)){close(host);result=VX_EINVAL;}
@@ -603,6 +786,13 @@ uint32_t vx_import(uint32_t nid,uint32_t r[16],uint8_t *mem,size_t size) {
     }
    }
   }
+ }
+
+ /* Public SceLibKernel save paths, qualified through io-nids.json. */
+ else if(nid==UINT32_C(0xBCA5B623))result=io_getstat(r,mem,size);
+ else if(nid==UINT32_C(0x9670D39F)||nid==UINT32_C(0xE20ED0F3)||
+         nid==UINT32_C(0xF737E369)||nid==UINT32_C(0xE9F91EC8)) {
+  result=io_save_mutation(nid,r,mem,size);
  }
 
  else if(nid==UINT32_C(0x34EFD876)||nid==UINT32_C(0xFDB32293)) {
@@ -665,12 +855,26 @@ uint32_t vx_import(uint32_t nid,uint32_t r[16],uint8_t *mem,size_t size) {
   if(vx_display_import(nid,r,mem,size,memory_base,&display_result))result=display_result;
  }
 #endif
+#ifdef VX_ENABLE_NGS
+ if(result==VX_ENOSYS){
+  uint32_t ngs_result;
+  if(vx_ngs_import(nid,r,mem,size,memory_base,kernel_active?kernel_owner():0,&ngs_result))
+   result=ngs_result;
+ }
+#endif
+#ifdef VX_ENABLE_AUDIODEC
+ if(result==VX_ENOSYS){
+  uint32_t decode_result;
+  if(vx_audiodec_import(nid,r,mem,size,memory_base,&decode_result))result=decode_result;
+ }
+#endif
 #ifdef VX_ENABLE_AUDIO
  if(result==VX_ENOSYS){uint32_t audio_result;
   if(vx_audio_import(nid,r,mem,size,memory_base,&audio_result)){
    result=audio_result;
    if(result==VX_AUDIO_WOULD_BLOCK&&kernel_active){uint64_t now=0;process_time(&now);kernel_thread *t=&kernel_threads[kernel_current];
-    t->wait=(kernel_wait){.kind=KW_AUDIO,.object=r[0],.count=r[1],.mode=nid,.deadline=now+UINT64_C(30000000),.ticket=++kernel_ticket};t->state=KT_WAIT;kernel_stats.waits++;result=0;
+    t->audio_r2=r[2];t->audio_r3=r[3];
+    t->wait=(kernel_wait){.kind=KW_AUDIO,.object=r[0],.count=r[1],.mode=nid,.out=vx_audio_port_generation(r[0]),.deadline=now+UINT64_C(30000000),.ticket=++kernel_ticket};t->state=KT_WAIT;kernel_stats.waits++;result=0;
    }
   }
  }
@@ -678,7 +882,35 @@ uint32_t vx_import(uint32_t nid,uint32_t r[16],uint8_t *mem,size_t size) {
 #ifdef VX_ENABLE_GXM
  if(result==VX_ENOSYS){uint32_t gxm_result;
   vx_gxm_set_queue_backend(gxm_queue_worker_create,gxm_queue_worker_destroy);
-  if(vx_gxm_import(nid,r,mem,size,memory_base,&gxm_result))result=gxm_result;
+  if(vx_gxm_import(nid,r,mem,size,memory_base,&gxm_result)){
+   result=gxm_result;
+   if(result==VX_GXM_ALLOCATE){
+    vx_gxm_allocation request={0};
+    vx_gxm_take_allocation(&request);
+    kernel_thread *t=&kernel_threads[kernel_current];
+    uint32_t sp=r[13];
+    uint32_t bottom=(sp-64)&~7u;
+    if(kernel_active&&request.entry&&!t->callback_active&&!t->gxm_allocation.entry&&
+       t->uid!=vx_gxm_queue_worker()&&sp>=72&&range(bottom,sp-bottom,size)&&
+       (!t->stack_uid||bottom>=t->stack_base)&&vx_guest_target_valid(request.entry)){
+     t->gxm_allocation=request;result=0;
+    }else{
+     result=vx_gxm_finish_allocation(&request,0,0,NULL,0,memory_base);
+    }
+   }
+   if(result==VX_GXM_WOULD_BLOCK){
+    result=UINT32_C(0x805b0017);
+    if(kernel_active){
+     kernel_thread *t=&kernel_threads[kernel_current];
+     if(t->uid!=vx_gxm_queue_worker()){
+      t->wait=(kernel_wait){.kind=KW_GXM,.object=r[0],.count=r[1],.mode=nid,
+                            .out=r[2],.timeout=0,.ticket=++kernel_ticket};
+      t->gxm_r3=r[3];
+      t->state=KT_WAIT;kernel_stats.waits++;result=0;
+     }
+    }
+   }
+  }
  }
 #endif
 #ifdef VX_ENABLE_WINDOW

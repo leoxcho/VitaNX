@@ -7,9 +7,10 @@ import os
 import re
 import struct
 
-# Override with --app-root or VITANX_APP_ROOT; never embed a developer's private drive path.
-DEFAULT_APP_ROOT = Path(os.environ.get('VITANX_APP_ROOT',
-    str(Path.home() / 'Library' / 'Application Support' / 'Vita3K' / 'ux0' / 'app'))).expanduser()
+DEFAULT_APP_ROOT = Path(os.environ.get(
+    'VITANX_APP_ROOT',
+    str(Path.home() / 'Library/Application Support/Vita3K/Vita3K/ux0/app')
+)).expanduser()
 TITLE_ID = re.compile(r'^[A-Z]{4}[0-9]{5}$')
 _MAX_SFO_BYTES = 2 * 1024 * 1024
 _MAX_SFO_ENTRIES = 256

@@ -14,17 +14,23 @@
 #define INVALID_FREQ UINT32_C(0x80260008)
 #define INVALID_VOLUME UINT32_C(0x80260009)
 #define INVALID_TYPE UINT32_C(0x8026000A)
+#define INVALID_CONFIG UINT32_C(0x8026000C)
 #define NO_MEMORY UINT32_C(0x8026000D)
 /* ABI references: installed VitaSDK audioout.h and db/360/SceAudio.yml. */
 enum {BUFFER_COUNT=3};
 typedef struct {
  AudioQueueRef queue;AudioQueueBufferRef buffers[BUFFER_COUNT];pthread_mutex_t mutex;
- pthread_cond_t condition;int ready,closing;unsigned free_mask,queued;uint32_t length,frequency,channels;
- int32_t volume[2];vx_audio_stats stats;
+ pthread_cond_t condition;int ready,closing;unsigned free_mask,queued;uint32_t length,frequency,channels,type;
+ uint32_t generation;
+ int32_t volume[2];double envelope;vx_audio_stats stats;
 } port;
 static _Thread_local port ports[4];
 static _Thread_local vx_audio_stats history;
-static _Thread_local int paused,nonblocking;
+static _Thread_local int paused,nonblocking,bgm_alc;
+static _Thread_local uint32_t generation;
+uint32_t vx_audio_port_generation(uint32_t number){
+ return number<4&&ports[number].queue?ports[number].generation:0;
+}
 void vx_audio_set_nonblocking(int enabled){nonblocking=!!enabled;}
 static void finished(void *user,AudioQueueRef queue,AudioQueueBufferRef buffer){
  (void)queue;port *p=user;
@@ -57,7 +63,7 @@ void vx_audio_pause(int value){
  value=!!value;if(paused==value)return;paused=value;
  for(unsigned i=0;i<4;i++)if(ports[i].queue){if(value)AudioQueuePause(ports[i].queue);else AudioQueueStart(ports[i].queue,NULL);}
 }
-void vx_audio_shutdown(void){for(unsigned i=0;i<4;i++)release(&ports[i]);memset(&history,0,sizeof history);paused=nonblocking=0;}
+void vx_audio_shutdown(void){for(unsigned i=0;i<4;i++)release(&ports[i]);memset(&history,0,sizeof history);paused=nonblocking=bgm_alc=0;}
 static int wait_buffer(port *p,int drain){
  struct timespec limit;if(clock_gettime(CLOCK_REALTIME,&limit))return -1;
  /* Account for long valid voice-port buffers instead of a fixed short timeout. */
@@ -69,37 +75,103 @@ static int wait_buffer(port *p,int drain){
 }
 static int range(uint32_t a,size_t n,size_t size,uint32_t base){return a>=base&&(uint64_t)a-base<=size&&n<=size-((uint64_t)a-base);}
 static uint32_t read32(const uint8_t *p){return (uint32_t)p[0]|(uint32_t)p[1]<<8|(uint32_t)p[2]<<16|(uint32_t)p[3]<<24;}
+static int32_t pcm_sample(const uint8_t *source){
+ return (int16_t)((uint16_t)source[0]|(uint16_t)source[1]<<8);
+}
+static double normalizer_gain(port *p,const uint8_t *source){
+ /* Stereo linking preserves the image; a slow peak release avoids pumping on brief gaps. */
+ int32_t peak=0;
+ for(uint32_t c=0;c<p->channels;c++){
+  int32_t magnitude=pcm_sample(source+c*2);
+  if(magnitude<0)magnitude=-magnitude;
+  if(magnitude>peak)peak=magnitude;
+ }
+ p->envelope-=(p->envelope-peak)/(p->frequency*0.25);
+ if(peak>p->envelope)p->envelope=peak;
+ return p->envelope>13056?26112/p->envelope:2.0;
+}
+static uint32_t validate_config(uint32_t type,uint32_t len,uint32_t freq,uint32_t mode){
+ if(len<64||len>65472||len%64)return INVALID_SIZE;
+ if(mode>1)return INVALID_FORMAT;
+ if((type==0&&freq!=48000)||(freq!=8000&&freq!=11025&&freq!=12000&&freq!=16000&&
+    freq!=22050&&freq!=24000&&freq!=32000&&freq!=44100&&freq!=48000))return INVALID_FREQ;
+ return 0;
+}
+static OSStatus make_queue(port *p,uint32_t length,uint32_t frequency,uint32_t channels,
+                           AudioQueueRef *queue,AudioQueueBufferRef buffers[BUFFER_COUNT]){
+ AudioStreamBasicDescription format={0};
+ format.mSampleRate=frequency;format.mFormatID=kAudioFormatLinearPCM;
+ format.mFormatFlags=kAudioFormatFlagIsSignedInteger|kAudioFormatFlagIsPacked;
+ format.mFramesPerPacket=1;format.mChannelsPerFrame=channels;format.mBitsPerChannel=16;
+ format.mBytesPerFrame=format.mBytesPerPacket=channels*2;
+ OSStatus status=AudioQueueNewOutput(&format,finished,p,NULL,NULL,0,queue);
+ for(unsigned i=0;i<BUFFER_COUNT&&!status;i++)status=AudioQueueAllocateBuffer(*queue,length*channels*2,&buffers[i]);
+ return status;
+}
 int vx_audio_import(uint32_t nid,uint32_t r[16],uint8_t *mem,size_t size,uint32_t base,uint32_t *out){
  if(!r||!out)return 0;
  uint32_t result;
  switch(nid){
  case UINT32_C(0x5BC341E4):{
   if(r[0]>2){result=INVALID_TYPE;break;}
-  if(r[1]<64||r[1]>65472||r[1]%64){result=INVALID_SIZE;break;}
-  if(r[3]>1){result=INVALID_FORMAT;break;}
   uint32_t freq=r[2];
-  if((r[0]==0&&freq!=48000)||(freq!=8000&&freq!=11025&&freq!=12000&&freq!=16000&&freq!=22050&&freq!=24000&&freq!=32000&&freq!=44100&&freq!=48000)){result=INVALID_FREQ;break;}
+  result=validate_config(r[0],r[1],freq,r[3]);
+  if(result)break;
   unsigned i;for(i=0;i<4;i++)if(!ports[i].queue)break;
   if(i==4){result=PORT_FULL;break;}
-  port *p=&ports[i];p->length=r[1];p->frequency=freq;p->channels=r[3]+1;p->volume[0]=p->volume[1]=32768;
+  port *p=&ports[i];p->type=r[0];p->length=r[1];p->frequency=freq;p->channels=r[3]+1;p->volume[0]=p->volume[1]=32768;
   if(pthread_mutex_init(&p->mutex,NULL)){memset(p,0,sizeof *p);result=NO_MEMORY;break;}
   if(pthread_cond_init(&p->condition,NULL)){pthread_mutex_destroy(&p->mutex);memset(p,0,sizeof *p);result=NO_MEMORY;break;}
   p->ready=1;
-  AudioStreamBasicDescription format={0};format.mSampleRate=freq;format.mFormatID=kAudioFormatLinearPCM;
-  format.mFormatFlags=kAudioFormatFlagIsSignedInteger|kAudioFormatFlagIsPacked;
-  format.mFramesPerPacket=1;format.mChannelsPerFrame=p->channels;format.mBitsPerChannel=16;
-  format.mBytesPerFrame=format.mBytesPerPacket=p->channels*2;
-  OSStatus status=AudioQueueNewOutput(&format,finished,p,NULL,NULL,0,&p->queue);
-  for(unsigned j=0;j<BUFFER_COUNT&&!status;j++)status=AudioQueueAllocateBuffer(p->queue,p->length*p->channels*2,&p->buffers[j]);
+  OSStatus status=make_queue(p,p->length,p->frequency,p->channels,&p->queue,p->buffers);
   if(status){release(p);result=NOT_OPENED;break;}
+  if(!++generation)++generation;
+  p->generation=generation;
   p->free_mask=(1u<<BUFFER_COUNT)-1;p->stats.ports_opened=1;result=i;break;
  }
+ case UINT32_C(0x12FB1767):{ /* GetAdopt */
+  if(r[0]>2){result=INVALID_TYPE;break;}
+  result=0;
+  for(unsigned i=0;i<4;i++)if(ports[i].queue&&ports[i].type==r[0]){result=1;break;}
+  break;
+ }
+ case UINT32_C(0x940CE469): /* SetAlcMode */
+  if(r[0]>=2){result=INVALID_CONFIG;break;}
+  if(bgm_alc!=(int)r[0]){
+   bgm_alc=(int)r[0];
+   for(unsigned i=0;i<4;i++)ports[i].envelope=0;
+  }
+  result=0;break;
  case UINT32_C(0x69E2E6B5):
   if(r[0]>=4||!ports[r[0]].queue){result=INVALID_PORT;break;}
   release(&ports[r[0]]);result=0;break;
  case UINT32_C(0x9A5370C4):{
   if(r[0]>=4||!ports[r[0]].queue){result=INVALID_PORT;break;}
   port *p=&ports[r[0]];pthread_mutex_lock(&p->mutex);result=p->queued*p->length;pthread_mutex_unlock(&p->mutex);break;
+ }
+ case UINT32_C(0xB8BA0D07):{ /* SetConfig */
+  if(r[0]>=4||!ports[r[0]].queue){result=INVALID_PORT;break;}
+  port *p=&ports[r[0]];
+  uint32_t len=r[1]==UINT32_MAX?p->length:r[1];
+  uint32_t freq=r[2]==UINT32_MAX?p->frequency:r[2];
+  uint32_t mode=r[3]==UINT32_MAX?p->channels-1:r[3];
+  result=validate_config(p->type,len,freq,mode);
+  if(result||(len==p->length&&freq==p->frequency&&mode+1==p->channels))break;
+  pthread_mutex_lock(&p->mutex);int pending=nonblocking&&p->queued;pthread_mutex_unlock(&p->mutex);
+  if(pending){result=VX_AUDIO_WOULD_BLOCK;break;}
+  if(wait_buffer(p,1)){result=NOT_OPENED;break;}
+  AudioQueueRef replacement=NULL;
+  AudioQueueBufferRef buffers[BUFFER_COUNT]={0};
+  if(make_queue(p,len,freq,mode+1,&replacement,buffers)){
+   if(replacement)AudioQueueDispose(replacement,true);
+   result=NOT_OPENED;break;
+  }
+  AudioQueueDispose(p->queue,true);
+  p->queue=replacement;
+  memcpy(p->buffers,buffers,sizeof buffers);
+  p->length=len;p->frequency=freq;p->channels=mode+1;p->envelope=0;
+  p->free_mask=(1u<<BUFFER_COUNT)-1;
+  break;
  }
  case UINT32_C(0x9C8EDAEA):{
   if(r[0]>=4||!ports[r[0]].queue){result=INVALID_PORT;break;}
@@ -130,10 +202,15 @@ int vx_audio_import(uint32_t nid,uint32_t r[16],uint8_t *mem,size_t size,uint32_
   p->free_mask&=~(1u<<index);p->queued++;
   pthread_mutex_unlock(&p->mutex);AudioQueueBufferRef buffer=p->buffers[index];
   const uint8_t *source=mem+(r[1]-base);uint8_t *target=buffer->mAudioData;
-  for(uint32_t i=0;i<p->length*p->channels;i++){
-   int16_t sample=(int16_t)((uint16_t)source[i*2]|(uint16_t)source[i*2+1]<<8);
-   int16_t scaled=(int16_t)((int32_t)sample*p->volume[i%p->channels]/32768);
-   target[i*2]=(uint8_t)scaled;target[i*2+1]=(uint8_t)((uint16_t)scaled>>8);
+  for(uint32_t frame=0;frame<p->length;frame++){
+   uint32_t first=frame*p->channels;
+   double gain=bgm_alc&&p->type==1?normalizer_gain(p,source+first*2):1.0;
+   for(uint32_t c=0;c<p->channels;c++){
+    uint32_t i=first+c;
+    int32_t sample=(int32_t)(pcm_sample(source+i*2)*gain);
+    int16_t scaled=(int16_t)(sample*p->volume[c]/32768);
+    target[i*2]=(uint8_t)scaled;target[i*2+1]=(uint8_t)((uint16_t)scaled>>8);
+   }
   }
   buffer->mAudioDataByteSize=(UInt32)bytes;
   OSStatus status=AudioQueueEnqueueBuffer(p->queue,buffer,0,NULL);

@@ -40,6 +40,10 @@ def smoke(output):
     return result
 
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    if not argv:
+        from .interactive import interactive_menu
+        return interactive_menu()
     p=argparse.ArgumentParser(prog='vitanx',description='Plaintext Vita ELF static recompilation; experimental, no commercial compatibility claim.')
     sub=p.add_subparsers(dest='command',required=True)
     sub.add_parser('doctor')

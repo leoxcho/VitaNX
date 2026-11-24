@@ -56,7 +56,10 @@ static uint32_t call(uint32_t n,uint32_t a,uint32_t b,uint32_t c,uint32_t d){r[0
 int main(void){
  const uint32_t base=0x81000000;uint32_t volume[2]={16384,32768};memcpy(memory+32,volume,8);
  for(int i=0;i<64;i++){int16_t pair[2]={32767,-32768};memcpy(memory+128+i*4,pair,4);}
+ assert(!call(0x12fb1767,0,0,0,0));
  assert(call(0x5bc341e4,0,64,48000,1)==0);assert(call(0x5bc341e4,0,64,48000,1)==1);
+ assert(call(0x12fb1767,0,0,0,0)==1);
+ uint32_t generation=vx_audio_port_generation(0);assert(generation);
  assert(!call(0x64167f11,0,3,base+32,0));
  for(int i=0;i<3;i++)assert(!call(0x02db3f5f,0,base+128,0,0));
  assert(call(0x9a5370c4,0,0,0,0)==192);
@@ -73,7 +76,9 @@ int main(void){
  assert(!call(0x69e2e6b5,0,0,0,0));assert(!call(0x69e2e6b5,1,0,0,0));
  vx_audio_get_stats(&stats);assert(stats.buffers_completed==4);
  /* Release must cancel queued PCM without pretending it completed playback. */
+ assert(!vx_audio_port_generation(0)&&!call(0x12fb1767,0,0,0,0));
  assert(call(0x5bc341e4,0,64,48000,1)==0);
+ assert(vx_audio_port_generation(0)!=generation);
  assert(!call(0x02db3f5f,0,base+128,0,0));
  memset(memory+128,0,256);assert(((int16_t *)queues[nq-1]->buffers[0]->mAudioData)[0]==32767);
  assert(!call(0x69e2e6b5,0,0,0,0));vx_audio_get_stats(&stats);
@@ -88,6 +93,22 @@ int main(void){
  assert(call(0x02db3f5f,0,base+128,0,0)==0x80260001);vx_audio_get_stats(&stats);
  assert(stats.buffers_queued==6&&stats.buffers_completed==4);
  assert(call(0x5bc341e4,0,64,48000,1)==0);assert(!call(0x69e2e6b5,0,0,0,0));
+ /* Config changes drain asynchronously and preserve the old port if replacement allocation fails. */
+ assert(call(0x5bc341e4,1,64,48000,1)==0);
+ assert(!call(0x64167f11,0,3,base+32,0));
+ assert(!call(0x02db3f5f,0,base+128,0,0));
+ vx_audio_set_nonblocking(1);
+ assert(call(0xb8ba0d07,0,128,44100,0)==VX_AUDIO_WOULD_BLOCK);
+ complete(queues[nq-1],0);
+ fail_allocate=1;assert(call(0xb8ba0d07,0,128,44100,0)==0x80260001);
+ assert(call(0x9c8edaea,0,0,0,0)==64);
+ assert(!call(0xb8ba0d07,0,128,44100,0));
+ assert(call(0x9c8edaea,0,0,0,0)==128&&call(0x9c8edaea,0,1,0,0)==44100);
+ assert(call(0x9c8edaea,0,2,0,0)==0);
+ assert(!call(0xb8ba0d07,0,UINT32_MAX,UINT32_MAX,UINT32_MAX));
+ int16_t sample=32767;memcpy(memory+128,&sample,2);
+ assert(!call(0x02db3f5f,0,base+128,0,0));
+ assert(((int16_t *)queues[nq-1]->buffers[0]->mAudioData)[0]==16383);
  vx_audio_shutdown();vx_audio_get_stats(&stats);assert(!stats.ports_opened&&!stats.buffers_queued&&!stats.buffers_completed);return 0;}
 '''
         with tempfile.TemporaryDirectory() as d:

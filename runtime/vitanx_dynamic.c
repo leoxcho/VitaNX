@@ -1,7 +1,6 @@
 /* vitanx 2026-11-09: shared process state for on-demand native translations.
    All loaded blocks use this monitor and the same compatibility runtime. */
 #include "vita_runtime.h"
-#include "vita_memblock_diag.h"
 #include "vitanx_devices.h"
 #include "vitanx_format.h"
 #include "vitanx_memory.h"
@@ -35,13 +34,12 @@ int vn_guest_write_allowed(const uint8_t *p,size_t size){
 
 void vn_reset_executable(void){range_count=0;}
 /* Bounded import diagnostics; the actual runtime decides every result. */
-static struct {uint32_t nid,args[4],result,fault,r1_after,memblock_reason;} import_trace[64];
+static struct {uint32_t nid,args[4],result,fault,r1_after;} import_trace[64];
 static size_t import_count;
 static _Thread_local const char *last_import_error;
 const char *vn_import_error(void){return last_import_error;}
 static size_t trace_begin(uint32_t nid,uint32_t *r){
  size_t slot=import_count++%64;import_trace[slot].nid=nid;import_trace[slot].fault=0;
- import_trace[slot].memblock_reason=VX_MEMBLOCK_OK;
  for(int i=0;i<4;i++)import_trace[slot].args[i]=r[i];return slot;
 }
 uint32_t vn_import(uint32_t nid,uint32_t *r,uint8_t *mem,size_t size){
@@ -53,17 +51,15 @@ uint32_t vn_import(uint32_t nid,uint32_t *r,uint8_t *mem,size_t size){
  if(handled<0){last_import_error=vn_format_error();import_trace[slot].fault=1;import_trace[slot].result=r[0];import_trace[slot].r1_after=r[1];return r[0];}
  if(!handled)result=vx_import(nid,r,mem,size);
  else {vx_guest_memory_written();r[0]=result;}
- if(nid==UINT32_C(0xB9D5EBDE))import_trace[slot].memblock_reason=vx_runtime_memblock_failure_reason();
  import_trace[slot].result=result;import_trace[slot].r1_after=r[1];return result;
 }
 uint32_t vn_import_vfp(uint32_t nid,uint32_t *r,uint32_t *f,uint8_t *mem,size_t size){
  size_t slot=trace_begin(nid,r);last_import_error=NULL;uint32_t result=vx_import_vfp(nid,r,f,mem,size);
- if(nid==UINT32_C(0xB9D5EBDE))import_trace[slot].memblock_reason=vx_runtime_memblock_failure_reason();
  import_trace[slot].result=result;import_trace[slot].r1_after=r[1];return result;
 }
 size_t vn_import_trace_count(void){return import_count;}
 uint32_t vn_import_trace_field(size_t index,unsigned field){
- if(index>=import_count||import_count-index>64||field>8)return 0;
+ if(index>=import_count||import_count-index>64||field>7)return 0;
  size_t slot=index%64;
- return field==8?import_trace[slot].memblock_reason:field==7?import_trace[slot].r1_after:field==6?import_trace[slot].fault:field==0?import_trace[slot].nid:field==5?import_trace[slot].result:import_trace[slot].args[field-1];
+ return field==7?import_trace[slot].r1_after:field==6?import_trace[slot].fault:field==0?import_trace[slot].nid:field==5?import_trace[slot].result:import_trace[slot].args[field-1];
 }

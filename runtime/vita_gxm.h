@@ -24,8 +24,17 @@ void vx_gxm_get_stats(vx_gxm_stats *out);
 /* Lifetime counters distinguish startup not reached from rejected initialization. */
 typedef struct {uint64_t initialize_calls,initializations,registration_calls;uint32_t initialized;} vx_gxm_readiness;
 void vx_gxm_get_readiness(vx_gxm_readiness *out);
-/* Queue setup owns real storage and a dormant validated guest worker. Submission
-   remains unsupported until sync/callback dispatch is implemented. */
+/* Private service result consumed by the cooperative guest scheduler. */
+#define VX_GXM_WOULD_BLOCK UINT32_C(0xffffffff)
+#define VX_GXM_ALLOCATE UINT32_C(0xfffffffe)
+typedef struct {uint32_t context,stage,entry,user,bytes,output;} vx_gxm_allocation;
+int vx_gxm_take_allocation(vx_gxm_allocation *request);
+uint32_t vx_gxm_finish_allocation(const vx_gxm_allocation *request,uint32_t address,uint32_t length,
+                                  uint8_t *mem,size_t size,uint32_t base);
+uint32_t vx_gxm_queue_worker(void);
+size_t vx_gxm_queue_take(uint32_t worker,uint8_t *data,size_t capacity);
+void vx_gxm_queue_complete(uint32_t worker);
+void vx_gxm_queue_detach(uint32_t worker);
 typedef uint32_t (*vx_gxm_queue_create)(uint32_t,uint32_t *,uint8_t *,size_t);
 typedef void (*vx_gxm_queue_destroy)(uint32_t);
 void vx_gxm_set_queue_backend(vx_gxm_queue_create create,vx_gxm_queue_destroy destroy);

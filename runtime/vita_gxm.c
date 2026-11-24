@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <math.h>
 /* ABI/enums/NIDs: installed VitaSDK gxm.h and db/360/SceGxm.yml.
-   Queue configuration is supported; submission, tiled layouts, color keys and sync objects reject;
+   Scene submission and display callbacks share guest sync objects; tiled layouts and color keys reject;
    successful transfers have completed GPU work and guest readback. */
 #define G_UNINITIALIZED UINT32_C(0x805B0000)
 #define G_INITIALIZED UINT32_C(0x805B0001)
@@ -15,6 +15,7 @@
 #define G_ALIGNMENT UINT32_C(0x805B0005)
 #define G_UNSUPPORTED UINT32_C(0x805B0009)
 #define G_DRIVER UINT32_C(0x805B0017)
+enum { GPU_READ=1, GPU_WRITE=2, FRAGMENT_USSE=4, VERTEX_USSE=8 };
 typedef struct {uint32_t base,size,attr;} mapping;
 static _Thread_local mapping maps[32];
 static _Thread_local int initialized;
@@ -23,6 +24,45 @@ static _Thread_local vx_gxm_stats stats;
 static _Thread_local vx_gxm_readiness readiness;
 static _Thread_local vx_gxm_initialize_state init_state;
 static _Thread_local uint8_t *queue_data,*parameter_buffer;
+typedef struct {uint32_t handle,rendering,display_refs;} gpu_sync;
+typedef struct {gpu_sync *old_buffer,*new_buffer;} display_entry;
+static _Thread_local gpu_sync syncs[64];
+static _Thread_local display_entry queue[16];
+static _Thread_local unsigned queue_head,queue_count;
+static _Thread_local int queue_running;
+
+static gpu_sync *find_sync(uint32_t handle){
+ if(!handle)return NULL;
+ for(size_t i=0;i<sizeof syncs/sizeof *syncs;i++)if(syncs[i].handle==handle)return &syncs[i];
+ return NULL;
+}
+
+uint32_t vx_gxm_queue_worker(void){return init_state.worker;}
+size_t vx_gxm_queue_take(uint32_t worker,uint8_t *data,size_t capacity){
+ if(!worker||worker!=init_state.worker||!queue_count||queue_running||
+    queue[queue_head].new_buffer->rendering||capacity<init_state.data_size)return 0;
+ memcpy(data,queue_data+queue_head*init_state.data_size,init_state.data_size);
+ queue_running=1;
+ return init_state.data_size;
+}
+void vx_gxm_queue_complete(uint32_t worker){
+ if(worker!=init_state.worker||!queue_running)return;
+ display_entry *entry=&queue[queue_head];
+ entry->old_buffer->display_refs--;
+ if(entry->new_buffer!=entry->old_buffer)entry->new_buffer->display_refs--;
+ *entry=(display_entry){0};
+ queue_head=(queue_head+1)%init_state.max_pending;
+ queue_count--;
+ queue_running=0;
+}
+void vx_gxm_queue_detach(uint32_t worker){
+ if(!worker||worker!=init_state.worker)return;
+ while(queue_count){
+  queue_running=1;
+  vx_gxm_queue_complete(worker);
+ }
+ init_state.worker=0;
+}
 static _Thread_local vx_gxm_queue_create queue_create;
 static _Thread_local vx_gxm_queue_destroy queue_destroy;
 void vx_gxm_set_queue_backend(vx_gxm_queue_create create,vx_gxm_queue_destroy destroy){
@@ -33,6 +73,8 @@ int vx_gxm_get_initialize_state(vx_gxm_initialize_state *out){
 }
 static void release_initialize(void){
  if(init_state.worker&&queue_destroy)queue_destroy(init_state.worker);
+ memset(queue,0,sizeof queue);memset(syncs,0,sizeof syncs);
+ queue_head=queue_count=0;queue_running=0;
  free(queue_data);free(parameter_buffer);queue_data=parameter_buffer=0;
  memset(&init_state,0,sizeof init_state);
 }
@@ -43,20 +85,53 @@ static _Thread_local vx_gxm_shader_resolver shader_resolver;
 void vx_gxm_set_shader_resolver(vx_gxm_shader_resolver resolver){shader_resolver=resolver;}
 /* Handles are opaque identity tokens, never host pointers or guest addresses. */
 static _Thread_local uint32_t serial=0x70000000;
-typedef struct {uint32_t handle,stream,vu,fu,vp,fp,pipeline_vp,pipeline_fp;int scene;uint32_t texture[4],ring[2],ring_size[2],ring_used[2];uint32_t data,width,height,stride,depth,depth_stride,depth_compare,depth_write,stencil,stencil_stride,stencil_state[2][7];} scene_context;
+typedef struct {uint32_t handle,stream,vu,fu,vp,fp,pipeline_vp,pipeline_fp;int scene;uint32_t target,fragment_usse,vertex_sync,fragment_sync,cull,region[5],polygon,texture[VX_GXP_FRAGMENT_TEXTURES][4],ring[2],ring_size[2],ring_used[2];uint32_t data,width,height,stride,depth,depth_stride,depth_compare,depth_write,stencil,stencil_stride,stencil_state[2][7];} scene_context;
 static _Thread_local scene_context context;
-static _Thread_local uint32_t target_handle,target_width,target_height,patcher;
+enum { DEFERRED_COMMAND_CAP = 256, VDM_STAGE = 2, VDM_RESERVATION = 1024, COMMAND_LIST_MAGIC = 0x5658434c };
+typedef struct {uint32_t nid,args[9];} recorded_command;
+typedef struct {
+ uint32_t handle,count,programs[2],buffer[3],capacity[3],allocator[3],user,vdm;
+ int recording,allocating;
+ recorded_command commands[DEFERRED_COMMAND_CAP];
+} deferred_context;
+typedef struct {
+ uint32_t handle,owner,output,count,vdm;
+ recorded_command commands[DEFERRED_COMMAND_CAP];
+} command_list;
+static _Thread_local deferred_context deferred[8];
+static _Thread_local command_list lists[32];
+static _Thread_local vx_gxm_allocation allocation_request;
+
+static deferred_context *find_deferred(uint32_t handle){
+ if(handle)for(size_t i=0;i<sizeof deferred/sizeof *deferred;i++)if(deferred[i].handle==handle)return &deferred[i];
+ return NULL;
+}
+static int can_record(uint32_t nid){
+ switch(nid){
+  case 0xE1CA72AE:case 0x70C86868:case 0xFD93209D: /* raster */
+  case 0x14BD831F:case 0xF32CBF34: /* depth */
+  case 0xB8645A9A:case 0x1A68C8D2:case 0x8FA6FE44:case 0x866A0517: /* stencil */
+  case 0x895DF2E9:case 0xC697CAE5:case 0xA824EB24: /* stream and uniforms */
+  case 0x29C34DF5:case 0x31FF8ABD:case 0xAD2F48D9:case 0xBC059AFC: /* texture, shaders, draw */
+   return 1;
+ }
+ return 0;
+}
+typedef struct {uint32_t handle,width,height;} render_target;
+static _Thread_local render_target targets[32];
+static _Thread_local uint32_t patcher;
 typedef struct {uint32_t handle,owner;const vx_gxm_shader *shader;uint32_t kind,stride,index_source;vx_gxp_attribute attrs[16];} program;
 static _Thread_local program programs[32];
 static _Thread_local vx_metal *renderer;
 int vx_gxm_set_catalog(const vx_gxm_shader *shaders,size_t count){
  if(initialized||count>256||(count&&!shaders))return -1;
- for(size_t i=0;i<count;i++)if(!shaders[i].gxp||shaders[i].size<156||!shaders[i].msl||shaders[i].stage>1||shaders[i].input_count>16||shaders[i].uniform_words>120||shaders[i].texture_mask>1)return -1;
+ for(size_t i=0;i<count;i++)if(!shaders[i].gxp||shaders[i].size<156||!shaders[i].msl||shaders[i].stage>1||shaders[i].input_count>16||shaders[i].uniform_words>120||shaders[i].texture_mask>=1u<<VX_GXP_FRAGMENT_TEXTURES)return -1;
  catalog=shaders;catalog_count=count;return 0;
 }
 static void reset_scene(void){
  vx_metal_destroy(renderer);renderer=0;memset(&context,0,sizeof context);
- target_handle=target_width=target_height=patcher=0;memset(programs,0,sizeof programs);
+ patcher=0;memset(targets,0,sizeof targets);memset(programs,0,sizeof programs);
+ memset(deferred,0,sizeof deferred);memset(lists,0,sizeof lists);allocation_request=(vx_gxm_allocation){0};
 }
 static program *find_program(uint32_t handle,uint32_t kind){
  for(unsigned i=0;i<32;i++)if(programs[i].handle==handle&&handle&&programs[i].kind==kind)return &programs[i];return 0;
@@ -70,6 +145,137 @@ static int mapped(uint32_t p,uint64_t n,unsigned attr){
  for(unsigned i=0;i<32;i++)if(maps[i].size&&p>=maps[i].base&&
    (uint64_t)p-maps[i].base<=maps[i].size&&n<=maps[i].size-((uint64_t)p-maps[i].base)&&(maps[i].attr&attr)==attr)return 1;
  return 0;
+}
+static uint32_t map_range(uint32_t address,uint32_t length,unsigned attr){
+ mapping *slot=NULL;
+ for(size_t i=0;i<sizeof maps/sizeof *maps;i++){
+  mapping *m=&maps[i];
+  if(!m->size){if(!slot)slot=m;continue;}
+  unsigned kind=attr&~(GPU_READ|GPU_WRITE);
+  if((m->attr&~(GPU_READ|GPU_WRITE))==kind&&
+     (uint64_t)address<(uint64_t)m->base+m->size&&m->base<(uint64_t)address+length)return G_VALUE;
+ }
+ if(!slot)return G_MEMORY;
+ *slot=(mapping){address,length,attr};
+ return 0;
+}
+static uint32_t unmap_range(uint32_t address,unsigned kind){
+ for(size_t i=0;i<sizeof maps/sizeof *maps;i++){
+  mapping *m=&maps[i];
+  if(m->size&&m->base==address&&(m->attr&~(GPU_READ|GPU_WRITE))==kind){
+   if(kind==FRAGMENT_USSE&&context.handle&&context.fragment_usse>=address&&
+      (uint64_t)context.fragment_usse-address<m->size)return G_VALUE;
+   *m=(mapping){0};
+   return 0;
+  }
+ }
+ return G_POINTER;
+}
+static render_target *find_target(uint32_t handle){
+ if(!handle)return NULL;
+ for(size_t i=0;i<sizeof targets/sizeof *targets;i++)if(targets[i].handle==handle)return &targets[i];
+ return NULL;
+}
+int vx_gxm_take_allocation(vx_gxm_allocation *request){
+ if(!allocation_request.entry)return 0;
+ *request=allocation_request;
+ allocation_request=(vx_gxm_allocation){0};
+ return 1;
+}
+/* A descriptor can be replayed until replaced. Keep every range referenced
+   by a live descriptor or a recording reserved, across all deferred contexts. */
+static uint64_t advance_past(uint64_t address,uint32_t bytes,uint32_t used,uint32_t length){
+ if(length&&address<(uint64_t)used+length&&(uint64_t)used<address+bytes)
+  return (uint64_t)used+length;
+ return address;
+}
+static uint64_t advance_past_commands(uint64_t address,uint32_t bytes,const recorded_command *commands,uint32_t count){
+ uint64_t next=address;
+ for(uint32_t i=0;i<count;i++){
+  const recorded_command *command=&commands[i];
+  if(command->nid==0xC697CAE5||command->nid==0xA824EB24){
+   uint64_t end=advance_past(address,bytes,command->args[1],command->args[8]);
+   if(end>next)next=end;
+  }
+ }
+ return next;
+}
+static uint32_t deferred_space(uint32_t buffer,uint32_t capacity,uint32_t bytes){
+ if(!buffer)return 0;
+ uint64_t end=(uint64_t)buffer+capacity;
+ for(uint64_t address=buffer;address+bytes<=end;){
+  uint64_t next=address;
+  for(size_t i=0;i<sizeof lists/sizeof *lists;i++){
+   const command_list *list=&lists[i];
+   if(!list->handle)continue;
+   uint64_t vdm=advance_past(address,bytes,list->vdm,list->vdm?VDM_RESERVATION:0);
+   uint64_t uniforms=advance_past_commands(address,bytes,list->commands,list->count);
+   if(vdm>next)next=vdm;
+   if(uniforms>next)next=uniforms;
+  }
+  for(size_t i=0;i<sizeof deferred/sizeof *deferred;i++){
+   const deferred_context *pending=&deferred[i];
+   if(!pending->recording)continue;
+   uint64_t vdm=advance_past(address,bytes,pending->vdm,pending->vdm?VDM_RESERVATION:0);
+   uint64_t uniforms=advance_past_commands(address,bytes,pending->commands,pending->count);
+   if(vdm>next)next=vdm;
+   if(uniforms>next)next=uniforms;
+  }
+  if(next==address)return (uint32_t)address;
+  address=(next+15)&~UINT64_C(15);
+ }
+ return 0;
+}
+static uint32_t begin_deferred(deferred_context *pending,uint32_t address){
+ pending->count=0;
+ pending->programs[0]=pending->programs[1]=0;
+ pending->vdm=address;
+ pending->recording=1;
+ return 0;
+}
+static uint32_t reserve_deferred(deferred_context *pending,unsigned stage,uint32_t bytes,uint32_t output,
+                                uint8_t *mem,size_t size,uint32_t base,int refill){
+ if(stage!=VDM_STAGE&&pending->count==DEFERRED_COMMAND_CAP)return G_MEMORY;
+ uint32_t address=deferred_space(pending->buffer[stage],pending->capacity[stage],bytes);
+ if(!address){
+  uint32_t entry=pending->allocator[stage];
+  if(!refill||!entry||pending->allocating||allocation_request.entry)return UINT32_C(0x805B000B);
+  allocation_request=(vx_gxm_allocation){pending->handle,stage,entry,pending->user,bytes,output};
+  pending->allocating=1;
+  return VX_GXM_ALLOCATE;
+ }
+ if((address&15)||!range(address,bytes,base,size)||!mapped(address,bytes,GPU_READ))return G_POINTER;
+ if(stage==VDM_STAGE)return begin_deferred(pending,address);
+ recorded_command *cmd=&pending->commands[pending->count++];
+ *cmd=(recorded_command){.nid=stage?0xA824EB24:0xC697CAE5,.args={pending->handle,address,[8]=bytes}};
+ memcpy(mem+(output-base),&address,4);
+ return 0;
+}
+uint32_t vx_gxm_finish_allocation(const vx_gxm_allocation *request,uint32_t address,uint32_t length,
+                                  uint8_t *mem,size_t size,uint32_t base){
+ deferred_context *pending=find_deferred(request->context);
+ if(!pending||!pending->allocating)return G_VALUE;
+ pending->allocating=0;
+ if(!mem)return G_DRIVER;
+ unsigned stage=request->stage;
+ if(stage>VDM_STAGE||length<request->bytes||(address&15)||!range(address,length,base,size)||
+    !mapped(address,length,GPU_READ)||(stage!=VDM_STAGE&&!range(request->output,4,base,size)))
+  return UINT32_C(0x805B000B);
+ uint32_t old_address=pending->buffer[stage],old_length=pending->capacity[stage];
+ pending->buffer[stage]=address;
+ pending->capacity[stage]=length;
+ uint32_t result=reserve_deferred(pending,stage,request->bytes,request->output,mem,size,base,0);
+ if(result){pending->buffer[stage]=old_address;pending->capacity[stage]=old_length;}
+ return result;
+}
+/* Keep the previous private RGBA8 descriptor valid. Store the other
+   Vita formats as a relative base ID plus the SDK swizzle bits. */
+static uint32_t texture_format(uint32_t stamp){
+ return (((stamp&0xffu)^0x0cu)<<24)|(stamp&0x7000u);
+}
+static unsigned texture_pixel_bytes(uint32_t stamp){
+ if((stamp&~0x70ffu)!=0x80000000u)return 0;
+ return vx_metal_gxp_texture_pixel_bytes(texture_format(stamp));
 }
 static unsigned pixel_size(uint32_t format){
  switch(format){case 0:return 1;case UINT32_C(0x30000):case UINT32_C(0x40000):case UINT32_C(0xf0000):return 2;
@@ -151,7 +357,7 @@ int vx_gxm_float_import(uint32_t nid,uint32_t r[16],uint32_t f[64],uint8_t *mem,
   memcpy(ds+12,f,4);}
  return 1;
 }
-int vx_gxm_import(uint32_t nid,uint32_t r[16],uint8_t *mem,size_t size,uint32_t base,uint32_t *out){
+static int gxm_command(uint32_t nid,uint32_t r[16],uint8_t *mem,size_t size,uint32_t base,const uint32_t *recorded,uint32_t *out){
  if(!r||!mem||!out)return 0;
  uint32_t result=0;
  /* Stack arguments are fetched only by operations that need them. */
@@ -161,10 +367,151 @@ int vx_gxm_import(uint32_t nid,uint32_t r[16],uint8_t *mem,size_t size,uint32_t 
  case UINT32_C(0x8734FF4E):extra=4;break;case UINT32_C(0xED0F6E25):extra=5;break;
  case UINT32_C(0xCA9D41D1):case UINT32_C(0x4811AECB):extra=2;break;
  case UINT32_C(0xB8645A9A):case UINT32_C(0x1A68C8D2):extra=3;break;
- case UINT32_C(0xBC059AFC):extra=1;break;default:break;}
- if(extra){if((r[13]&3)||!range(r[13],extra*4,base,size)){*out=G_POINTER;return 1;}
-  for(unsigned i=0;i<extra;i++)a[4+i]=u32(mem+(r[13]-base)+4*i);}
+ case UINT32_C(0xBC059AFC):extra=1;break;
+ case UINT32_C(0x70C86868):extra=2;break;default:break;}
+ if(recorded){
+  memcpy(a,recorded,sizeof a);
+  a[0]=context.handle;
+ }else if(extra){
+  if((r[13]&3)||!range(r[13],extra*4,base,size)){*out=G_POINTER;return 1;}
+  for(unsigned i=0;i<extra;i++)a[4+i]=u32(mem+(r[13]-base)+4*i);
+ }
+ if(!recorded&&can_record(nid)){
+  deferred_context *pending=find_deferred(a[0]);
+  if(pending){
+   if(!pending->recording){*out=UINT32_C(0x805B0006);return 1;}
+   if(pending->allocating){*out=G_VALUE;return 1;}
+   if(pending->count==DEFERRED_COMMAND_CAP){*out=G_MEMORY;return 1;}
+   if(nid==0x29C34DF5){
+    if((a[2]&3)||!range(a[2],16,base,size)){*out=G_POINTER;return 1;}
+    memcpy(a+3,mem+(a[2]-base),16);
+   }
+   recorded_command *cmd=&pending->commands[pending->count++];
+   cmd->nid=nid;memcpy(cmd->args,a,sizeof a);
+   if(nid==0x31FF8ABD||nid==0xAD2F48D9)pending->programs[nid==0xAD2F48D9]=a[1];
+   *out=0;return 1;
+  }
+ }
  switch(nid){
+ case UINT32_C(0x249D5B00):{ /* CreateDeferredContext */
+  if(!initialized){result=G_UNINITIALIZED;break;}
+  if((a[0]&3)||(a[1]&3)||!range(a[0],48,base,size)||!range(a[1],4,base,size)){result=G_POINTER;break;}
+  const uint8_t *p=mem+(a[0]-base);
+  if(u32(p+4)<2048||!range(u32(p),u32(p+4),base,size)){result=G_POINTER;break;}
+  for(unsigned i=24;i<48;i+=8){
+   uint32_t address=u32(p+i),length=u32(p+i+4);
+   if((address||length)&&(!length||!range(address,length,base,size))){result=G_POINTER;break;}
+  }
+  if(result)break;
+  deferred_context *slot=NULL;
+  for(size_t i=0;i<sizeof deferred/sizeof *deferred;i++)if(!deferred[i].handle){slot=&deferred[i];break;}
+  if(!slot){result=G_MEMORY;break;}
+  slot->handle=token();slot->user=u32(p+20);
+  slot->allocator[VDM_STAGE]=u32(p+8);
+  slot->buffer[VDM_STAGE]=u32(p+24);
+  slot->capacity[VDM_STAGE]=u32(p+28);
+  for(unsigned stage=0;stage<2;stage++){
+   slot->allocator[stage]=u32(p+12+stage*4);
+   slot->buffer[stage]=u32(p+32+stage*8);
+   slot->capacity[stage]=u32(p+36+stage*8);
+  }
+  memcpy(mem+(a[1]-base),&slot->handle,4);break;
+ }
+ case UINT32_C(0x27CAD127):case UINT32_C(0xC6B3FCD0):case UINT32_C(0x0B9D13CE):
+ case UINT32_C(0x87632B9C):case UINT32_C(0xFA081D05):case UINT32_C(0xAD8C2EBA):{
+  if(!initialized){result=G_UNINITIALIZED;break;}
+  deferred_context *pending=find_deferred(a[0]);
+  if(!pending){result=G_POINTER;break;}
+  unsigned stage=(nid==0x27CAD127||nid==0x87632B9C)?0:(nid==0xC6B3FCD0||nid==0xFA081D05)?1:VDM_STAGE;
+  if(nid==0x87632B9C||nid==0xFA081D05||nid==0xAD8C2EBA){
+   if((a[1]&3)||!range(a[1],4,base,size)){result=G_POINTER;break;}
+   memcpy(mem+(a[1]-base),&pending->buffer[stage],4);
+   break;
+  }
+  if(pending->recording||pending->allocating){result=UINT32_C(0x805B0007);break;}
+  if((a[1]||a[2])&&(!a[1]||(a[1]&15)||a[2]<1024||
+      !range(a[1],a[2],base,size)||!mapped(a[1],a[2],GPU_READ))){result=G_VALUE;break;}
+  pending->buffer[stage]=a[1];
+  pending->capacity[stage]=a[2];
+  break;
+ }
+ case UINT32_C(0xD6A2FF2F):case UINT32_C(0x944D3F83):case UINT32_C(0x36D85916):{
+  if(!initialized){result=G_UNINITIALIZED;break;}
+  deferred_context *pending=find_deferred(a[0]);
+  if(!pending){result=G_POINTER;break;}
+  if(pending->allocating){result=G_VALUE;break;}
+  if(nid==0x944D3F83){
+   if(pending->recording){result=UINT32_C(0x805B0007);break;}
+   if(!pending->allocator[VDM_STAGE]&&!pending->buffer[VDM_STAGE])result=begin_deferred(pending,0);
+   else result=reserve_deferred(pending,VDM_STAGE,VDM_RESERVATION,0,mem,size,base,1);
+   break;
+  }
+  if(nid==0xD6A2FF2F){
+   if(pending->recording){result=UINT32_C(0x805B0007);break;}
+   for(size_t i=0;i<sizeof lists/sizeof *lists;i++)if(lists[i].owner==a[0])lists[i].handle=lists[i].owner=0;
+   *pending=(deferred_context){0};break;
+  }
+  if(!pending->recording){result=UINT32_C(0x805B0006);break;}
+  if((a[1]&3)||!range(a[1],32,base,size)){result=G_POINTER;break;}
+  command_list *slot=NULL;
+  for(size_t i=0;i<sizeof lists/sizeof *lists;i++){
+   if(lists[i].handle&&lists[i].output==a[1]){slot=&lists[i];break;}
+   if(!slot&&!lists[i].handle)slot=&lists[i];
+  }
+  if(!slot){result=G_MEMORY;break;}
+  slot->handle=token();slot->owner=a[0];slot->output=a[1];slot->count=pending->count;slot->vdm=pending->vdm;
+  memcpy(slot->commands,pending->commands,slot->count*sizeof *slot->commands);
+  uint32_t descriptor[8]={COMMAND_LIST_MAGIC,slot->handle};
+  memcpy(mem+(a[1]-base),descriptor,sizeof descriptor);
+  pending->recording=0;pending->vdm=0;break;
+ }
+ case UINT32_C(0xE8E139DD):{ /* ExecuteCommandList */
+  if(!initialized){result=G_UNINITIALIZED;break;}
+  if(!context.handle||a[0]!=context.handle||(a[1]&3)||!range(a[1],32,base,size)){result=G_POINTER;break;}
+  if(!context.scene){result=UINT32_C(0x805B0006);break;}
+  const uint8_t *descriptor=mem+(a[1]-base);
+  command_list *list=NULL;
+  if(u32(descriptor)==COMMAND_LIST_MAGIC){
+   uint32_t handle=u32(descriptor+4);
+   for(size_t i=0;i<sizeof lists/sizeof *lists;i++)if(handle&&lists[i].handle==handle){list=&lists[i];break;}
+  }
+  if(!list){result=G_POINTER;break;}
+  scene_context saved=context;
+  memset(context.region,0,sizeof context.region);
+  context.polygon=0;
+  context.cull=context.stream=context.vp=context.fp=context.vu=context.fu=0;
+  context.depth_compare=3;context.depth_write=1;
+  const uint32_t stencil[2][7]={{7,0,0,0,255,255,0},{7,0,0,0,255,255,0}};
+  memcpy(context.stencil_state,stencil,sizeof stencil);
+  memset(context.texture,0,sizeof context.texture);
+  for(uint32_t i=0;i<list->count;i++){
+   const recorded_command *cmd=&list->commands[i];
+   if(!gxm_command(cmd->nid,r,mem,size,base,cmd->args,&result)){result=G_UNSUPPORTED;break;}
+   if(result)break;
+  }
+  context=saved;
+  context.pipeline_vp=context.pipeline_fp=0;
+  break;
+ }
+ case UINT32_C(0x70C86868): /* SetRegionClip */
+ case UINT32_C(0xFD93209D): /* SetFrontPolygonMode */
+  if(!initialized){result=G_UNINITIALIZED;break;}
+  if(!context.handle||a[0]!=context.handle){result=G_POINTER;break;}
+  if(nid==0xFD93209D){
+   if(a[1]!=0&&a[1]!=0x00028000){result=G_UNSUPPORTED;break;}
+   context.polygon=a[1];
+  }else{
+   if(a[1]&0x3fffffffu){result=G_VALUE;break;}
+   if(a[1]>=0x80000000u&&(a[2]>a[4]||a[3]>a[5])){result=G_VALUE;break;}
+   memcpy(context.region,a+1,sizeof context.region);
+  }
+  break;
+
+ case UINT32_C(0xE1CA72AE): /* SetCullMode */
+  if(!initialized){result=G_UNINITIALIZED;break;}
+  if(!context.handle||a[0]!=context.handle){result=G_POINTER;break;}
+  if(a[1]>2){result=G_VALUE;break;}
+  context.cull=a[1];break;
 
 
  case UINT32_C(0xCA9D41D1):{
@@ -234,21 +581,22 @@ int vx_gxm_import(uint32_t nid,uint32_t r[16],uint8_t *mem,size_t size,uint32_t 
   else if(memcmp(mem+(a[0]-base),disabled,20))result=G_UNSUPPORTED;
   break;
  }
- case UINT32_C(0x4811AECB):{ /* Linear normalized RGBA8, one mip level */
+ case UINT32_C(0x4811AECB):{ /* Bounded linear texture, one mip level */
   if(!initialized){result=G_UNINITIALIZED;break;}
   if((a[0]&3)||!range(a[0],16,base,size)){result=G_POINTER;break;}
-  if(a[2]!=0x0c000000||a[5]!=1){result=G_UNSUPPORTED;break;}
+  unsigned pixel=vx_metal_gxp_texture_pixel_bytes(a[2]);
+  if(!pixel||a[5]!=1){result=G_UNSUPPORTED;break;}
   if(!a[3]||!a[4]||a[3]>4096||a[4]>4096){result=G_VALUE;break;}
-  uint64_t bytes=(uint64_t)a[3]*a[4]*4;
+  uint64_t bytes=(uint64_t)a[3]*a[4]*pixel;
   if((a[1]&3)||!range(a[1],bytes,base,size)||!mapped(a[1],bytes,1)){result=G_POINTER;break;}
-  uint32_t texture[4]={(2u<<3)|(2u<<6),0x6c000000|((a[3]-1)<<12)|(a[4]-1),a[1],0x80000000};
+  uint32_t texture[4]={(2u<<3)|(2u<<6),0x6c000000|((a[3]-1)<<12)|(a[4]-1),a[1],0x80000000|((a[2]>>24)^0x0c)|(a[2]&0x7000)};
   memcpy(mem+(a[0]-base),texture,16);break;
  }
  case UINT32_C(0xFA695FD7):case UINT32_C(0x416764E3):case UINT32_C(0x4281763E):case UINT32_C(0x126CDAA3):{
   if(!initialized){result=G_UNINITIALIZED;break;}
   if((a[0]&3)||!range(a[0],16,base,size)){result=G_POINTER;break;}
   uint8_t *p=mem+(a[0]-base);uint32_t word=u32(p);
-  if((u32(p+4)&0xff000000)!=0x6c000000||u32(p+12)!=0x80000000){result=G_UNSUPPORTED;break;}
+  if((u32(p+4)&0xff000000)!=0x6c000000||!texture_pixel_bytes(u32(p+12))){result=G_UNSUPPORTED;break;}
   unsigned shift,width;
   if(nid==0x4281763E||nid==0x126CDAA3){
    if(a[1]!=2){result=G_UNSUPPORTED;break;}shift=nid==0x4281763E?6:3;width=3;
@@ -258,15 +606,20 @@ int vx_gxm_import(uint32_t nid,uint32_t r[16],uint8_t *mem,size_t size,uint32_t 
  case UINT32_C(0x29C34DF5):{
   if(!initialized){result=G_UNINITIALIZED;break;}
   if(!context.handle||a[0]!=context.handle){result=G_POINTER;break;}
-  if(a[1]){result=G_UNSUPPORTED;break;}
-  if((a[2]&3)||!range(a[2],16,base,size)){result=G_POINTER;break;}
-  uint32_t texture[4];memcpy(texture,mem+(a[2]-base),16);
+  if(a[1]>=VX_GXP_FRAGMENT_TEXTURES){result=G_UNSUPPORTED;break;}
+  uint32_t texture[4];
+  if(recorded)memcpy(texture,a+3,sizeof texture);
+  else{
+   if((a[2]&3)||!range(a[2],16,base,size)){result=G_POINTER;break;}
+   memcpy(texture,mem+(a[2]-base),sizeof texture);
+  }
   uint32_t min=(texture[0]>>10)&3,mag=(texture[0]>>12)&3;
-  if((texture[1]&0xff000000)!=0x6c000000||texture[3]!=0x80000000||
+  unsigned pixel=texture_pixel_bytes(texture[3]);
+  if((texture[1]&0xff000000)!=0x6c000000||!pixel||
      (texture[0]&~((3u<<10)|(3u<<12)))!=((2u<<3)|(2u<<6))||min>1||mag!=min||(texture[2]&3)){result=G_UNSUPPORTED;break;}
-  uint64_t bytes=(uint64_t)(((texture[1]>>12)&4095)+1)*((texture[1]&4095)+1)*4;
+  uint64_t bytes=(uint64_t)(((texture[1]>>12)&4095)+1)*((texture[1]&4095)+1)*pixel;
   if(!range(texture[2],bytes,base,size)||!mapped(texture[2],bytes,1)){result=G_POINTER;break;}
-  memcpy(context.texture,texture,16);break;
+  memcpy(context.texture[a[1]],texture,16);break;
  }
  case UINT32_C(0xE84CE5B4):{ /* CreateContext: immediate, synchronous single-owner context */
   if(!initialized){result=G_UNINITIALIZED;break;}
@@ -274,10 +627,16 @@ int vx_gxm_import(uint32_t nid,uint32_t r[16],uint8_t *mem,size_t size,uint32_t 
   if((a[0]&3)||(a[1]&3)||!range(a[0],44,base,size)||!range(a[1],4,base,size)){result=G_POINTER;break;}
   const uint8_t *p=mem+(a[0]-base);
   if(!u32(p+4)||!range(u32(p),u32(p+4),base,size)){result=G_POINTER;break;}
-  for(unsigned i=8;i<40;i+=8){uint32_t addr=u32(p+i),n=u32(p+i+4);
+  for(unsigned i=8;i<32;i+=8){uint32_t addr=u32(p+i),n=u32(p+i+4);
    if(n&&(!range(addr,n,base,size)||!mapped(addr,n,1))){result=G_POINTER;break;}}
   if(result)break;
-  context=(scene_context){.handle=token(),.depth_compare=3,.depth_write=1,.stencil_state={{7,0,0,0,255,255,0},{7,0,0,0,255,255,0}}};
+  uint32_t usse=u32(p+32),usse_size=u32(p+36),offset=u32(p+40);
+  if(usse_size){
+   /* A USSE offset is a guest address in the translated backend. */
+   if(offset!=usse){result=G_VALUE;break;}
+   if(!range(usse,usse_size,base,size)||!mapped(usse,usse_size,FRAGMENT_USSE)){result=G_POINTER;break;}
+  }else if(usse||offset){result=G_VALUE;break;}
+  context=(scene_context){.handle=token(),.fragment_usse=usse,.depth_compare=3,.depth_write=1,.stencil_state={{7,0,0,0,255,255,0},{7,0,0,0,255,255,0}}};
   for(unsigned i=0;i<2;i++){context.ring[i]=u32(p+16+i*8);context.ring_size[i]=u32(p+20+i*8);}
   memcpy(mem+(a[1]-base),&context.handle,4);break;
  }
@@ -288,19 +647,22 @@ int vx_gxm_import(uint32_t nid,uint32_t r[16],uint8_t *mem,size_t size,uint32_t 
   vx_metal_destroy(renderer);renderer=0;memset(&context,0,sizeof context);break;
  case UINT32_C(0x97118913):case UINT32_C(0x7B1FABB6):{
   if(!initialized){result=G_UNINITIALIZED;break;}
-  if(!context.handle||a[0]!=context.handle){result=G_POINTER;break;}
-  if(!context.scene){result=G_VALUE;break;}
+  deferred_context *pending=find_deferred(a[0]);
+  if(!pending&&(!context.handle||a[0]!=context.handle)){result=G_POINTER;break;}
+  if(pending?(!pending->recording||pending->allocating):!context.scene){result=G_VALUE;break;}
   if((a[1]&3)||!range(a[1],4,base,size)){result=G_POINTER;break;}
   unsigned stage=nid==0x97118913?0:1;
-  program *p=find_program(stage?context.fp:context.vp,stage?2:1);
+  uint32_t handle=pending?pending->programs[stage]:stage?context.fp:context.vp;
+  program *p=find_program(handle,stage+1);
   if(!p){result=G_VALUE;break;}
   uint32_t bytes=p->shader->uniform_words*4;
   if(!bytes)bytes=4;
   bytes=(bytes+15)&~15u;
+  if(pending){result=reserve_deferred(pending,stage,bytes,a[1],mem,size,base,1);break;}
   uint32_t used=context.ring_used[stage],capacity=context.ring_size[stage];
   if(used>capacity||bytes>capacity-used){result=G_MEMORY;break;}
   uint64_t address=(uint64_t)context.ring[stage]+used;
-  if((address&15)||address>UINT32_MAX||!range((uint32_t)address,bytes,base,size)||!mapped((uint32_t)address,bytes,3)){result=G_POINTER;break;}
+  if((address&15)||address>UINT32_MAX||!range((uint32_t)address,bytes,base,size)||!mapped((uint32_t)address,bytes,GPU_READ)){result=G_POINTER;break;}
   uint32_t output=(uint32_t)address;memcpy(mem+(a[1]-base),&output,4);
   context.ring_used[stage]+=bytes;if(stage)context.fu=output;else context.vu=output;break;
  }
@@ -339,7 +701,7 @@ int vx_gxm_import(uint32_t nid,uint32_t r[16],uint8_t *mem,size_t size,uint32_t 
    shader=shader_resolver(p,u32(p+8));
    /* A resolver cannot substitute unrelated code or unchecked metadata. */
    if(shader&&(!shader->gxp||shader->size!=u32(p+8)||memcmp(shader->gxp,p,shader->size)||!shader->msl||
-      shader->stage>1||shader->input_count>16||shader->uniform_words>120||shader->texture_mask>1))shader=0;
+      shader->stage>1||shader->input_count>16||shader->uniform_words>120||shader->texture_mask>=1u<<VX_GXP_FRAGMENT_TEXTURES))shader=0;
   }
   if(!shader){result=G_UNSUPPORTED;break;}
   program *slot=free_program();if(!slot){result=G_MEMORY;break;}
@@ -396,17 +758,21 @@ int vx_gxm_import(uint32_t nid,uint32_t r[16],uint8_t *mem,size_t size,uint32_t 
   if(!result)patcher=0;break;
  case UINT32_C(0x207AF96B):{
   if(!initialized){result=G_UNINITIALIZED;break;}
-  if(target_handle){result=G_UNSUPPORTED;break;}
   if((a[0]&3)||(a[1]&3)||!range(a[0],20,base,size)||!range(a[1],4,base,size)){result=G_POINTER;break;}
   const uint8_t *p=mem+(a[0]-base);unsigned w=p[4]|p[5]<<8,h=p[6]|p[7]<<8;
   if(u32(p)||u32(p+12)||p[10]||p[11]||u32(p+16)!=UINT32_MAX){result=G_UNSUPPORTED;break;}
   unsigned scenes=p[8]|p[9]<<8;if(!w||!h||w>4096||h>4096||!scenes||scenes>8){result=G_VALUE;break;}
-  target_width=w;target_height=h;target_handle=token();memcpy(mem+(a[1]-base),&target_handle,4);break;
+  render_target *slot=NULL;
+  for(size_t i=0;i<sizeof targets/sizeof *targets;i++)if(!targets[i].handle){slot=&targets[i];break;}
+  if(!slot){result=G_MEMORY;break;}
+  *slot=(render_target){token(),w,h};memcpy(mem+(a[1]-base),&slot->handle,4);break;
  }
  case UINT32_C(0x0B94C50A):
   if(!initialized){result=G_UNINITIALIZED;break;}
-  if(!target_handle||a[0]!=target_handle){result=G_POINTER;break;}
-  if(context.scene){result=G_VALUE;break;}target_handle=0;break;
+  render_target *target=find_target(a[0]);
+  if(!target){result=G_POINTER;break;}
+  if(context.scene&&context.target==a[0]){result=G_VALUE;break;}
+  *target=(render_target){0};break;
  case UINT32_C(0xED0F6E25):{
   if(!initialized){result=G_UNINITIALIZED;break;}
   if((a[0]&3)||!range(a[0],48,base,size)){result=G_POINTER;break;}
@@ -419,9 +785,15 @@ int vx_gxm_import(uint32_t nid,uint32_t r[16],uint8_t *mem,size_t size,uint32_t 
  }
  case UINT32_C(0x8734FF4E):{
   if(!initialized){result=G_UNINITIALIZED;break;}
-  if(!context.handle||a[0]!=context.handle||!target_handle||a[2]!=target_handle){result=G_POINTER;break;}
+  render_target *target=find_target(a[2]);
+  if(!context.handle||a[0]!=context.handle||!target){result=G_POINTER;break;}
+  uint32_t target_width=target->width,target_height=target->height;
   if(context.scene){result=G_VALUE;break;}
-  if(a[1]||a[3]||a[4]||a[5]){result=G_UNSUPPORTED;break;}
+  if(a[1]||a[3]){result=G_UNSUPPORTED;break;}
+  gpu_sync *vertex=find_sync(a[4]),*fragment=find_sync(a[5]);
+  if((a[4]&&!vertex)||(a[5]&&!fragment)){result=G_POINTER;break;}
+  if((vertex&&(vertex->rendering||vertex->display_refs))||
+     (fragment&&(fragment->rendering||fragment->display_refs))){result=VX_GXM_WOULD_BLOCK;break;}
   uint32_t depth=0,stencil=0,depth_stride=0,depth_flags=0,background_stencil=0;float background_depth=1;
   if(a[7]){
    if((a[7]&3)||!range(a[7],20,base,size)){result=G_POINTER;break;}
@@ -462,22 +834,42 @@ int vx_gxm_import(uint32_t nid,uint32_t r[16],uint8_t *mem,size_t size,uint32_t 
   /* Pipeline attachment formats change only when depth enablement changes. */
   if(!!context.depth!=!!depth||!!context.stencil!=!!stencil)context.pipeline_vp=context.pipeline_fp=0;
   context.stencil=stencil;context.stencil_stride=depth_stride;context.depth=depth;context.depth_stride=depth_stride;
-  context.ring_used[0]=context.ring_used[1]=0;context.scene=1;context.data=data;context.width=w;context.height=h;context.stride=stride;break;
+  context.ring_used[0]=context.ring_used[1]=0;context.scene=1;context.target=a[2];
+  context.vertex_sync=a[4];context.fragment_sync=a[5];
+  if(vertex)vertex->rendering=1;
+  if(fragment)fragment->rendering=1;
+  context.data=data;context.width=w;context.height=h;context.stride=stride;break;
  }
  case UINT32_C(0xBC059AFC):{
   if(!initialized){result=G_UNINITIALIZED;break;}
   if(!context.handle||a[0]!=context.handle){result=G_POINTER;break;}
   if(!context.scene){result=G_VALUE;break;}
-  if(a[1]||(a[2]!=0&&a[2]!=0x01000000)){result=G_UNSUPPORTED;break;}
-  if(!a[4]||a[4]>65535||a[4]%3){result=G_VALUE;break;}
+  if(a[2]!=0&&a[2]!=0x01000000){result=G_UNSUPPORTED;break;}
+  if(!a[4]||a[4]>65535){result=G_VALUE;break;}
+  vx_metal_primitive primitive;
+  unsigned count=a[4];
+  int fan=0;
+  switch(a[1]){
+   case 0:primitive=VX_METAL_TRIANGLES;if(count%3)result=G_VALUE;break;
+   case 0x04000000:primitive=VX_METAL_LINES;if(count%2)result=G_VALUE;break;
+   case 0x0c000000:primitive=VX_METAL_TRIANGLE_STRIP;if(count<3)result=G_VALUE;break;
+   case 0x10000000:
+    primitive=VX_METAL_TRIANGLES;fan=1;
+    if(count<3||count>65535/3+2)result=G_VALUE;
+    else count=(count-2)*3;
+    break;
+   default:result=G_UNSUPPORTED;break;
+  }
+  if(result)break;
   program *v=find_program(context.vp,1),*f=find_program(context.fp,2);
   if(!v||!f||!context.stream){result=G_VALUE;break;}
-  if(f->shader->texture_mask){
-   uint32_t *t=context.texture;
+  for(unsigned slot=0;slot<VX_GXP_FRAGMENT_TEXTURES;slot++)if(f->shader->texture_mask&(1u<<slot)){
+   uint32_t *t=context.texture[slot];
    if(!t[3]){result=G_VALUE;break;}
-   uint64_t bytes=(uint64_t)(((t[1]>>12)&4095)+1)*((t[1]&4095)+1)*4;
+   uint64_t bytes=(uint64_t)(((t[1]>>12)&4095)+1)*((t[1]&4095)+1)*texture_pixel_bytes(t[3]);
    if(!range(t[2],bytes,base,size)||!mapped(t[2],bytes,1)){result=G_POINTER;break;}
   }
+  if(result)break;
   if((f->shader->varyings&~v->shader->varyings)||(a[2]?1u:0u)!=v->index_source){result=G_UNSUPPORTED;break;}
   unsigned bytes=a[2]?4:2;
   if((a[3]&(bytes-1))||!range(a[3],a[4]*bytes,base,size)||!mapped(a[3],a[4]*bytes,1)){result=G_POINTER;break;}
@@ -495,21 +887,44 @@ int vx_gxm_import(uint32_t nid,uint32_t r[16],uint8_t *mem,size_t size,uint32_t 
   if(!status&&context.stencil)for(unsigned face=0;face<2&&!status;face++){uint32_t *t=context.stencil_state[face];status=vx_metal_gxp_stencil_face_state(renderer,face,t[0],t[1],t[2],t[3],t[4],t[5],t[6]);}
   if(!status&&(context.pipeline_vp!=context.vp||context.pipeline_fp!=context.fp)){context.pipeline_vp=context.pipeline_fp=0;status=vx_metal_gxp_pipeline(renderer,v->shader->msl,f->shader->msl,v->attrs,v->shader->input_count,v->stride,v->shader->uniform_words,f->shader->uniform_words,f->shader->texture_mask,diagnostic,sizeof diagnostic);}
   if(!status){context.pipeline_vp=context.vp;context.pipeline_fp=context.fp;}
-  if(!status&&f->shader->texture_mask){uint32_t *t=context.texture;unsigned w=((t[1]>>12)&4095)+1,h=(t[1]&4095)+1;
-   status=vx_metal_gxp_upload_texture(renderer,mem+(t[2]-base),(size_t)w*h*4,w,h,w*4,(t[0]>>10)&3);}
+  for(unsigned slot=0;slot<VX_GXP_FRAGMENT_TEXTURES&&!status;slot++)if(f->shader->texture_mask&(1u<<slot)){
+   uint32_t *t=context.texture[slot];unsigned w=((t[1]>>12)&4095)+1,h=(t[1]&4095)+1;
+   unsigned pixel=texture_pixel_bytes(t[3]);
+   status=vx_metal_gxp_upload_texture_format(renderer,slot,mem+(t[2]-base),(size_t)w*h*pixel,w,h,
+                                             w*pixel,(t[0]>>10)&3,texture_format(t[3]));
+  }
   /* Gather checked indices into a bounded packed stream; Metal sees real guest geometry. */
   uint8_t *vertices=0;
-  if(!status){vertices=malloc((size_t)a[4]*v->stride);if(!vertices){result=G_MEMORY;break;}
-   for(unsigned i=0;i<a[4];i++){const uint8_t *p=mem+(a[3]-base)+i*bytes;uint32_t index=bytes==4?u32(p):(uint32_t)p[0]|(uint32_t)p[1]<<8;
-    memcpy(vertices+(size_t)i*v->stride,mem+(context.stream-base)+(size_t)index*v->stride,v->stride);}
-   status=vx_metal_gxp_draw_load(renderer,vertices,(size_t)a[4]*v->stride,a[4],vu,v->shader->uniform_words,fu,f->shader->uniform_words);free(vertices);}
+  if(!status){
+   vertices=malloc((size_t)count*v->stride);if(!vertices){result=G_MEMORY;break;}
+   for(unsigned i=0;i<count;i++){
+    /* Metal has no triangle fan. Preserve the anchor and edge order. */
+    unsigned element=fan?(i%3?i/3+i%3:0):i;
+    const uint8_t *p=mem+(a[3]-base)+element*bytes;
+    uint32_t index=bytes==4?u32(p):(uint32_t)p[0]|(uint32_t)p[1]<<8;
+    memcpy(vertices+(size_t)i*v->stride,mem+(context.stream-base)+(size_t)index*v->stride,v->stride);
+   }
+   status=vx_metal_gxp_set_cull(renderer,context.cull);
+   if(!status)status=vx_metal_gxp_set_raster(renderer,context.polygon!=0,context.region);
+   if(!status)status=vx_metal_gxp_draw_primitive_load(renderer,primitive,vertices,(size_t)count*v->stride,count,
+     vu,v->shader->uniform_words,fu,f->shader->uniform_words);
+   free(vertices);
+  }
   stats.metal_status=status;if(status){result=G_DRIVER;break;}stats.draws++;break;
  }
  case UINT32_C(0xFE300E2F):{
   if(!initialized){result=G_UNINITIALIZED;break;}
   if(!context.handle||a[0]!=context.handle){result=G_POINTER;break;}
   if(!context.scene){result=G_VALUE;break;}
-  if(a[1]||a[2]){result=G_UNSUPPORTED;break;}
+  uint32_t notify_address[2]={0},notify_value[2]={0};
+  for(unsigned i=0;i<2;i++)if(a[i+1]){
+   uint32_t address=a[i+1];
+   if((address&3)||!range(address,8,base,size)){result=G_POINTER;break;}
+   notify_address[i]=u32(mem+(address-base));
+   notify_value[i]=u32(mem+(address-base)+4);
+   if((notify_address[i]&3)||!range(notify_address[i],4,base,size)){result=G_POINTER;break;}
+  }
+  if(result)break;
   uint64_t extent=((uint64_t)(context.height-1)*context.stride+context.width)*4;
   if(!range(context.data,extent,base,size)||!mapped(context.data,extent,2)){result=G_POINTER;break;}
   size_t bytes=(size_t)context.width*context.height*4;uint8_t *pixels=malloc(bytes);if(!pixels){result=G_MEMORY;break;}
@@ -530,6 +945,10 @@ int vx_gxm_import(uint32_t nid,uint32_t r[16],uint8_t *mem,size_t size,uint32_t 
   if(!status){for(unsigned y=0;y<context.height;y++)memcpy(mem+(context.data-base)+(size_t)y*context.stride*4,pixels+(size_t)y*context.width*4,context.width*4);
    if(depth_pixels)for(unsigned y=0;y<context.height;y++)memcpy(mem+(context.depth-base)+(size_t)y*context.depth_stride*4,depth_pixels+(size_t)y*context.width,context.width*4);
    if(stencil_pixels)for(unsigned y=0;y<context.height;y++)memcpy(mem+(context.stencil-base)+(size_t)y*context.stencil_stride,stencil_pixels+(size_t)y*context.width,context.width);
+   for(unsigned i=0;i<2;i++)if(notify_address[i])memcpy(mem+(notify_address[i]-base),&notify_value[i],4);
+   gpu_sync *vertex=find_sync(context.vertex_sync),*fragment=find_sync(context.fragment_sync);
+   if(vertex)vertex->rendering=0;
+   if(fragment)fragment->rendering=0;
    context.scene=0;stats.scenes++;}else result=G_DRIVER;free(stencil_pixels);free(depth_pixels);free(pixels);break;
  }
  case UINT32_C(0x06FF9151): /* sceGxmProgramGetParameter */
@@ -653,28 +1072,77 @@ int vx_gxm_import(uint32_t nid,uint32_t r[16],uint8_t *mem,size_t size,uint32_t 
   init_state=next;parameter_buffer=parameters;queue_data=data;
   memset(&stats,0,sizeof stats);initialized=1;readiness.initializations++;break;
  }
+ case UINT32_C(0x6A6013E1):{ /* SyncObjectCreate */
+  if(!initialized){result=G_UNINITIALIZED;break;}
+  if((a[0]&3)||!range(a[0],4,base,size)){result=G_POINTER;break;}
+  gpu_sync *slot=NULL;
+  for(size_t i=0;i<sizeof syncs/sizeof *syncs;i++)if(!syncs[i].handle){slot=&syncs[i];break;}
+  if(!slot){result=G_MEMORY;break;}
+  slot->handle=token();
+  memcpy(mem+(a[0]-base),&slot->handle,4);break;
+ }
+ case UINT32_C(0x889AE88C):{ /* SyncObjectDestroy */
+  if(!initialized){result=G_UNINITIALIZED;break;}
+  gpu_sync *sync=find_sync(a[0]);
+  if(!sync){result=G_POINTER;break;}
+  if(sync->rendering||sync->display_refs){result=G_VALUE;break;}
+  *sync=(gpu_sync){0};break;
+ }
+ case UINT32_C(0xEC5C26B5):{ /* DisplayQueueAddEntry */
+  if(!initialized){result=G_UNINITIALIZED;break;}
+  if(!init_state.callback||!queue_create){result=G_DRIVER;break;}
+  gpu_sync *old=find_sync(a[0]),*next=find_sync(a[1]);
+  if(!old||!next||!range(a[2],init_state.data_size,base,size)){result=G_POINTER;break;}
+  if(!init_state.worker){
+   result=queue_create(init_state.callback,&init_state.worker,mem,size);
+   if(result)break;
+  }
+  if(queue_count==init_state.max_pending){result=VX_GXM_WOULD_BLOCK;break;}
+  unsigned slot=(queue_head+queue_count)%init_state.max_pending;
+  memcpy(queue_data+slot*init_state.data_size,mem+(a[2]-base),init_state.data_size);
+  queue[slot]=(display_entry){old,next};
+  old->display_refs++;
+  if(next!=old)next->display_refs++;
+  queue_count++;break;
+ }
+ case UINT32_C(0xB98C5B0D): /* DisplayQueueFinish */
+  if(!initialized)result=G_UNINITIALIZED;
+  else if(queue_count)result=VX_GXM_WOULD_BLOCK;
+  break;
+ case UINT32_C(0x9F448E79):{ /* NotificationWait */
+  if(!initialized){result=G_UNINITIALIZED;break;}
+  if((a[0]&3)||!range(a[0],8,base,size)){result=G_POINTER;break;}
+  uint32_t address=u32(mem+(a[0]-base)),value=u32(mem+(a[0]-base)+4);
+  if((address&3)||!range(address,4,base,size)){result=G_POINTER;break;}
+  if(u32(mem+(address-base))!=value)result=VX_GXM_WOULD_BLOCK;
+  break;
+ }
  case UINT32_C(0xB627DE66):
   if(!initialized){result=G_UNINITIALIZED;break;}
+  if(queue_count||context.scene){result=G_VALUE;break;}
   release_initialize();reset_scene();vx_metal_destroy(transfer);transfer=0;initialized=0;memset(maps,0,sizeof maps);break;
- case UINT32_C(0xC61E34FC):{ /* sceGxmMapMemory */
+ case UINT32_C(0xC61E34FC): /* MapMemory */
+ case UINT32_C(0x008402C6): /* MapFragmentUsseMemory */
+ case UINT32_C(0xFA437510):{ /* MapVertexUsseMemory */
   if(!initialized){result=G_UNINITIALIZED;break;}
   if((r[0]&4095)||(r[1]&4095)){result=G_ALIGNMENT;break;}
-  if(!r[1]||!r[2]||(r[2]&~3u)){result=G_VALUE;break;}
+  if(!r[1]){result=G_VALUE;break;}
   if(!range(r[0],r[1],base,size)){result=G_POINTER;break;}
-  mapping *free_map=0;
-  for(unsigned i=0;i<32;i++){
-   if(!maps[i].size){if(!free_map)free_map=&maps[i];continue;}
-   if((uint64_t)r[0]<(uint64_t)maps[i].base+maps[i].size&&(uint64_t)maps[i].base<(uint64_t)r[0]+r[1]){result=G_VALUE;break;}
+  if(nid==0xC61E34FC){
+   if(!r[2]||(r[2]&~(GPU_READ|GPU_WRITE))){result=G_VALUE;break;}
+   result=map_range(r[0],r[1],r[2]);
+  }else{
+   if((r[2]&3)||!range(r[2],4,base,size)){result=G_POINTER;break;}
+   result=map_range(r[0],r[1],nid==0x008402C6?FRAGMENT_USSE:VERTEX_USSE);
+   if(!result)memcpy(mem+(r[2]-base),&r[0],4);
   }
-  if(!result){if(!free_map)result=G_MEMORY;else *free_map=(mapping){r[0],r[1],r[2]};}
   break;
  }
- case UINT32_C(0x828C68E8):{
+ case UINT32_C(0x828C68E8): /* UnmapMemory */
+ case UINT32_C(0x80CCEDBB): /* UnmapFragmentUsseMemory */
+ case UINT32_C(0x099134F5): /* UnmapVertexUsseMemory */
   if(!initialized){result=G_UNINITIALIZED;break;}
-  result=G_POINTER;
-  for(unsigned i=0;i<32;i++)if(maps[i].size&&maps[i].base==r[0]){memset(&maps[i],0,sizeof maps[i]);result=0;break;}
-  break;
- }
+  result=unmap_range(r[0],nid==0x80CCEDBB?FRAGMENT_USSE:nid==0x099134F5?VERTEX_USSE:0);break;
  case UINT32_C(0x45229C39): /* TransferFinish: all supported work is synchronous */
   if(!initialized)result=G_UNINITIALIZED;break;
  case UINT32_C(0x69DDFF5E):
@@ -706,4 +1174,9 @@ int vx_gxm_import(uint32_t nid,uint32_t r[16],uint8_t *mem,size_t size,uint32_t 
  default:return 0;
  }
  *out=result;return 1;
+}
+
+
+int vx_gxm_import(uint32_t nid,uint32_t r[16],uint8_t *mem,size_t size,uint32_t base,uint32_t *out){
+ return gxm_command(nid,r,mem,size,base,NULL,out);
 }

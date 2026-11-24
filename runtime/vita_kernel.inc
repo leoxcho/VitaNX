@@ -12,7 +12,7 @@ __attribute__((weak,noinline)) int vx_guest_target_valid(uint32_t pc){(void)pc;r
 #define KE_UID UINT32_C(0x800280E1)
 #define KE_COND UINT32_C(0x800280E3)
 enum {KT_FREE,KT_NEW,KT_READY,KT_WAIT,KT_DEAD};
-enum {KW_SLEEP=1,KW_SEMA,KW_MUTEX,KW_EVENT,KW_JOIN,KW_AUDIO,KW_LWMUTEX};
+enum {KW_SLEEP=1,KW_SEMA,KW_MUTEX,KW_EVENT,KW_JOIN,KW_AUDIO,KW_LWMUTEX,KW_GXM,KW_INPUT};
 typedef struct {uint32_t kind,object,count,mode,out,timeout;uint64_t deadline,ticket;int callbacks;} kernel_wait;
 typedef struct {
  uint32_t uid,entry,priority,stack_uid,stack_base,stack_size,status;
@@ -21,6 +21,14 @@ typedef struct {
  kernel_wait wait,saved_wait;
  uint64_t service_mark,instruction_mark;
  uint32_t fpscr_clear,fpscr_set;
+#ifdef VX_ENABLE_AUDIO
+ uint32_t audio_r2,audio_r3;
+#endif
+#ifdef VX_ENABLE_GXM
+ uint32_t gxm_r3,gxm_allocation_size;
+ int gxm_allocation_active;
+ vx_gxm_allocation gxm_allocation;
+#endif
 } kernel_thread;
 typedef struct {uint32_t uid,owner,count,attr;} kernel_mutex;
 typedef struct {uint32_t uid,work,attr;} kernel_lwmutex;
@@ -72,7 +80,12 @@ static kernel_event *kernel_find_event(uint32_t uid){for(int i=0;i<32;i++)if(ker
 static kernel_callback *kernel_find_callback(uint32_t uid){for(int i=0;i<32;i++)if(kernel_callbacks[i].uid==uid&&uid)return &kernel_callbacks[i];return NULL;}
 static uint32_t kernel_uid(void){return next_uid<INT32_MAX?next_uid++:0;}
 static uint32_t kernel_owner(void){return kernel_active?kernel_threads[kernel_current].uid:1;}
-static void kernel_reap(kernel_thread *t){memory_block *b=find_block(t->stack_uid);if(b)*b=(memory_block){0};*t=(kernel_thread){0};}
+static void kernel_reap(kernel_thread *t){
+#ifdef VX_ENABLE_GXM
+ if(t->gxm_allocation.entry)
+  vx_gxm_finish_allocation(&t->gxm_allocation,0,0,NULL,0,memory_base);
+#endif
+memory_block *b=find_block(t->stack_uid);if(b)*b=(memory_block){0};*t=(kernel_thread){0};}
 static uint32_t kernel_block(uint32_t kind,uint32_t object,uint32_t count,uint32_t mode,uint32_t out,uint32_t timeout,int callbacks,uint8_t *mem,size_t size){
  if(timeout&&!range(timeout,4,size))return K_ADDRESS;
  if(timeout&&!read32(guest_ptr(mem,timeout)))return K_TIMEOUT;
@@ -152,16 +165,57 @@ static void kernel_wake(uint8_t *mem,size_t size){
   else if(w->kind==KW_MUTEX){kernel_mutex *m=kernel_find_mutex(w->object);if(!m){ready=1;result=KW_DELETED;}else if(!m->owner){m->owner=t->uid;m->count=w->count;ready=1;}}
   else if(w->kind==KW_EVENT){kernel_event *e=kernel_find_event(w->object);if(!e){ready=1;result=KW_DELETED;}else if(kernel_event_ready(e,w->count,w->mode)){kernel_event_take(e,w->count,w->mode,w->out,mem);ready=1;}}
   else if(w->kind==KW_JOIN){kernel_thread *other=kernel_find_thread(w->object);if(!other){ready=1;result=KW_DELETED;}else if(other->state==KT_DEAD){if(w->out)write32(guest_ptr(mem,w->out),other->status);ready=1;}}
+#ifdef VX_ENABLE_WINDOW
+  else if(w->kind==KW_INPUT&&now>=w->deadline){
+   result=window_read_input(w->mode,w->object,w->out,mem);
+   vx_guest_memory_written();t->cpu.exclusive_valid=0;ready=1;
+  }
+#endif
 #ifdef VX_ENABLE_AUDIO
-  else if(w->kind==KW_AUDIO){uint32_t args[16]={0},audio_result;args[0]=w->object;args[1]=w->count;
-   if(vx_audio_import(w->mode,args,mem,size,memory_base,&audio_result)&&audio_result!=VX_AUDIO_WOULD_BLOCK){ready=1;result=audio_result;}}
+  else if(w->kind==KW_AUDIO){uint32_t args[16]={0},audio_result;args[0]=w->object;args[1]=w->count;args[2]=t->audio_r2;args[3]=t->audio_r3;
+   if(vx_audio_port_generation(w->object)!=w->out){ready=1;result=UINT32_C(0x80260003);}
+   else if(vx_audio_import(w->mode,args,mem,size,memory_base,&audio_result)&&audio_result!=VX_AUDIO_WOULD_BLOCK){ready=1;result=audio_result;}}
+#endif
+#ifdef VX_ENABLE_GXM
+  else if(w->kind==KW_GXM){
+   uint32_t args[16]={w->object,w->count,w->out,t->gxm_r3};
+   args[13]=t->cpu.r[13];
+   if(vx_gxm_import(w->mode,args,mem,size,memory_base,&result)&&result!=VX_GXM_WOULD_BLOCK){
+    ready=1;
+    vx_guest_memory_written();
+    t->cpu.exclusive_valid=0;
+   }
+  }
 #endif
   if(!ready&&w->deadline&&now>=w->deadline){ready=1;result=w->kind==KW_SLEEP?0:w->kind==KW_AUDIO?UINT32_C(0x80260001):K_TIMEOUT;}
   if(ready){if(w->timeout)write32(guest_ptr(mem,w->timeout),(uint32_t)(w->deadline>now?w->deadline-now:0));t->cpu.r[0]=result;t->state=KT_READY;t->wait=(kernel_wait){0};}
  }
  for(int i=1;i<32;i++)if(kernel_threads[i].state==KT_DEAD&&kernel_threads[i].auto_delete)kernel_reap(&kernel_threads[i]);
 }
-static int kernel_callback_dispatch(kernel_thread *t,size_t size){
+static int kernel_callback_dispatch(kernel_thread *t,uint8_t *mem,size_t size){
+#ifndef VX_ENABLE_NGS
+ (void)mem;
+#endif
+#ifdef VX_ENABLE_GXM
+ if(t->gxm_allocation.entry)return 0;
+#endif
+#ifdef VX_ENABLE_NGS
+ if(!t->callback_active&&!t->callback_request&&t->state==KT_READY){
+  vx_ngs_event event;
+  if(vx_ngs_pop_event(t->uid,&event)){
+   uint32_t sp=t->cpu.r[13];
+   if(sp<memory_base+512u||!range(sp-512u,512,size)||(t->stack_uid&&sp<t->stack_base+512u))return -1;
+   uint32_t callback_sp=(sp-256)&~7u,address=callback_sp+32;
+   vx_guest_memory_written();
+   memcpy(guest_ptr(mem,address),event.args,sizeof event.args);
+   t->saved_cpu=t->cpu;t->saved_state=t->state;t->saved_wait=t->wait;t->callback_active=1;
+   t->cpu=(vx_guest_state){0};t->cpu.tpidruro=t->saved_cpu.tpidruro;
+   t->cpu.pc=event.entry;t->cpu.r[0]=address;t->cpu.r[13]=callback_sp;t->cpu.r[14]=UINT32_MAX;
+   kernel_stats.callbacks++;
+   return 1;
+  }
+ }
+#endif
  if(t->callback_active||!(t->callback_request||(t->state==KT_WAIT&&t->wait.callbacks)))return 0;
  for(int i=0;i<32;i++){kernel_callback *cb=&kernel_callbacks[i];if(cb->uid&&cb->owner==t->uid&&cb->count){
   if(t->cpu.r[13]<memory_base+512u||!range(t->cpu.r[13]-512u,512,size)||(t->stack_uid&&t->cpu.r[13]<t->stack_base+512u))return -1;
@@ -332,6 +386,54 @@ static int kernel_import(uint32_t nid,uint32_t r[16],uint8_t *mem,size_t size,ui
  }
  *out=result;return 1;
 }
+#ifdef VX_ENABLE_GXM
+static void kernel_gxm_start_allocation(kernel_thread *t,uint8_t *mem){
+ uint32_t output=(t->cpu.r[13]-64)&~7u;
+ vx_guest_memory_written();
+ t->saved_cpu=t->cpu;
+ t->gxm_allocation_size=output;
+ t->gxm_allocation_active=1;
+ t->cpu.exclusive_valid=0;
+ t->cpu.pc=t->gxm_allocation.entry;
+ t->cpu.r[0]=t->gxm_allocation.user;
+ t->cpu.r[1]=t->gxm_allocation.bytes;
+ t->cpu.r[2]=output;
+ t->cpu.r[13]=output;
+ t->cpu.r[14]=UINT32_MAX;
+ write32(guest_ptr(mem,output),0);
+}
+static void kernel_gxm_end_allocation(kernel_thread *t,uint8_t *mem,size_t size){
+ uint32_t length=read32(guest_ptr(mem,t->gxm_allocation_size));
+ uint32_t result=vx_gxm_finish_allocation(&t->gxm_allocation,t->cpu.r[0],length,mem,size,memory_base);
+ uint64_t instructions=t->cpu.instructions,services=t->cpu.services;
+ t->cpu=t->saved_cpu;
+ t->cpu.exclusive_valid=0;
+ t->cpu.instructions=instructions;
+ t->cpu.services=services;
+ t->cpu.r[0]=result;
+ t->gxm_allocation=(vx_gxm_allocation){0};
+ t->gxm_allocation_active=0;
+ vx_guest_memory_written();
+}
+static void kernel_gxm_dispatch(uint8_t *mem,size_t size){
+ uint32_t worker=vx_gxm_queue_worker();
+ kernel_thread *t=worker?kernel_find_thread(worker):NULL;
+ if(!t||t->state!=KT_NEW)return;
+ /* Keep callback data above SP, with distinct storage for the active entry. */
+ const uint32_t capacity=512;
+ uint32_t data=t->stack_base+t->stack_size-capacity;
+ if(!range(data,capacity,size)||!vx_gxm_queue_take(worker,guest_ptr(mem,data),capacity))return;
+ vx_guest_memory_written();
+ t->cpu=(vx_guest_state){0};
+ t->cpu.pc=t->entry;
+ t->cpu.r[0]=data;
+ t->cpu.r[13]=data;
+ t->cpu.r[14]=UINT32_MAX;
+ t->service_mark=t->instruction_mark=0;
+ t->state=KT_READY;
+}
+#endif
+
 int vx_runtime_run(vx_guest_state *initial,uint8_t *mem,size_t size,vx_guest_resume_fn resume){
  if(!initial||!mem||!resume||kernel_active)return -8;
  memset(kernel_threads,0,sizeof kernel_threads);memset(&kernel_stats,0,sizeof kernel_stats);
@@ -361,7 +463,10 @@ int vx_runtime_run(vx_guest_state *initial,uint8_t *mem,size_t size,vx_guest_res
   if(t&&t->state==KT_DEAD)kernel_lw_set(m,mem,0,0);
  }
  kernel_wake(mem,size);
-  for(int i=0;i<32;i++)if(kernel_threads[i].uid&&kernel_callback_dispatch(&kernel_threads[i],size)<0){result=-2;break;}
+#ifdef VX_ENABLE_GXM
+  kernel_gxm_dispatch(mem,size);
+#endif
+  for(int i=0;i<32;i++)if(kernel_threads[i].uid&&kernel_callback_dispatch(&kernel_threads[i],mem,size)<0){result=-2;break;}
   if(result)break;
   int pick=-1;uint32_t priority=UINT32_MAX;
   for(int j=1;j<=32;j++){int i=(last+j)%32;kernel_thread *t=&kernel_threads[i];if(t->state==KT_READY&&t->priority<priority){priority=t->priority;pick=i;}}
@@ -380,6 +485,21 @@ int vx_runtime_run(vx_guest_state *initial,uint8_t *mem,size_t size,vx_guest_res
   if(rc<0){result=rc;break;}
   if(t->cpu.services!=t->service_mark){t->service_mark=t->cpu.services;t->instruction_mark=t->cpu.instructions;}
   else if(t->cpu.instructions-t->instruction_mark>1000000u){result=-4;break;}
+#ifdef VX_ENABLE_GXM
+  if(t->gxm_allocation.entry&&t->state!=KT_DEAD){
+   if(!t->gxm_allocation_active)kernel_gxm_start_allocation(t,mem);
+   else if(!rc)kernel_gxm_end_allocation(t,mem,size);
+   continue;
+  }
+  if(t->uid==vx_gxm_queue_worker()){
+   if(t->state==KT_DEAD){result=-8;break;}
+   if(!rc){
+    vx_gxm_queue_complete(t->uid);
+    t->state=KT_NEW;
+   }
+   continue;
+  }
+#endif
   if(t->state==KT_DEAD)continue;
   if(!rc){
    if(t->callback_active){vx_guest_memory_written();t->cpu=t->saved_cpu;t->cpu.exclusive_valid=0;t->state=t->saved_state;t->wait=t->saved_wait;t->callback_active=0;if(t->callback_request)t->cpu.r[0]=1;t->callback_request=0;t->service_mark=t->cpu.services;t->instruction_mark=t->cpu.instructions;}
@@ -388,6 +508,11 @@ int vx_runtime_run(vx_guest_state *initial,uint8_t *mem,size_t size,vx_guest_res
  }
  *initial=kernel_threads[0].cpu;
  if(stop_reason)initial->r[0]=stop_status;
+#ifdef VX_ENABLE_GXM
+ for(int i=0;i<32;i++)if(kernel_threads[i].gxm_allocation.entry)
+  vx_gxm_finish_allocation(&kernel_threads[i].gxm_allocation,0,0,NULL,0,memory_base);
+ vx_gxm_queue_detach(vx_gxm_queue_worker());
+#endif
  for(int i=1;i<32;i++)if(kernel_threads[i].uid)kernel_reap(&kernel_threads[i]);
 #ifdef VX_ENABLE_AUDIO
  vx_audio_set_nonblocking(0);

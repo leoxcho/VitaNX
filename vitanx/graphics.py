@@ -4,32 +4,66 @@ No device is opened while preparing a build. Shader catalog entries retain exact
 original GXP bytes; unsupported shaders are reported rather than substituted.
 """
 import ctypes as C
+import hashlib
 import json
+import os
 from pathlib import Path
 from vitaxnative.gxm_catalog import write_catalog
 
 MEDIA_FILES=('vita_gxm.c','vita_gxm.h','vita_metal.m','vita_metal.h',
              'vita_display.m','vita_display.h','vita_frame.c','vita_frame.h',
              'vita_window.m','vita_window.h','vita_input.h','vita_audio.c','vita_audio.h')
-MEDIA_FLAGS=('-DVX_ENABLE_GXM','-DVX_ENABLE_DISPLAY','-DVX_ENABLE_WINDOW','-DVX_ENABLE_AUDIO','-fobjc-arc')
+MEDIA_FILES+=('vita_audiodec.c','vita_audiodec.h','vita_ngs.c','vita_ngs.h')
+MEDIA_FLAGS=('-DVX_ENABLE_GXM','-DVX_ENABLE_DISPLAY','-DVX_ENABLE_WINDOW','-DVX_ENABLE_AUDIO','-DVX_ENABLE_NGS','-fobjc-arc')
 MEDIA_FRAMEWORKS=('Foundation','Metal','Cocoa','QuartzCore','GameController','AudioToolbox')
 
 def media_bindings():
     rows=json.loads(Path(__file__).with_name('media-nids.json').read_text())['bindings']
+    rows.extend(json.loads(Path(__file__).with_name('ngs-nids.json').read_text())['bindings'])
+    if ffmpeg_root():
+        rows.extend(json.loads(Path(__file__).with_name('audiodec-nids.json').read_text())['bindings'])
     return {(r['library_nid'],r['function_nid']):int(r['function_nid'],16) for r in rows}
 
 def prepare_media(output, assets):
     output=Path(output)
     report=write_catalog(assets,output/'gxm_catalog.h')
     (output/'gxm-catalog.json').write_text(json.dumps(report,indent=2)+'\n')
-    (output/'vitanx_media.c').write_text('#include "vita_gxm.h"\n#include "gxm_catalog.h"\n'
+    codec = ffmpeg_root()
+    libraries = ()
+    if codec:
+        libraries = tuple((str(p.resolve()), p.stat().st_mtime_ns)
+                          for p in (codec/'lib/libavcodec.dylib',codec/'lib/libavutil.dylib'))
+    codec_key = hashlib.sha256(repr(libraries).encode()).hexdigest()
+    (output/'vitanx_media.c').write_text(f'/* Audio codec build identity {codec_key} */\n'
+                                     '#include "vita_gxm.h"\n#include "gxm_catalog.h"\n'
                                      'int vn_media_initialize(void){return vx_install_gxm_catalog();}\n')
     return report
 
+def ffmpeg_root():
+    """Locate the same headers and libraries for local and bundled builds."""
+    configured = os.environ.get('VITANX_BUNDLED_FFMPEG')
+    candidates = (Path(configured),) if configured else (Path('/opt/homebrew/opt/ffmpeg'),)
+    for root in candidates:
+        if all((root/item).is_file() for item in (
+                'include/libavcodec/avcodec.h', 'include/libavutil/frame.h',
+                'lib/libavcodec.dylib', 'lib/libavutil.dylib')):
+            return root.resolve()
+    if configured:
+        raise RuntimeError('Bundled FFmpeg headers or libraries are missing')
+    return None
+
+
 def media_compile_args(output):
     output=Path(output)
-    sources=[str(output/name) for name in MEDIA_FILES if name.endswith(('.c','.m'))]
-    return [*MEDIA_FLAGS,*sources,str(output/'vitanx_media.c'),
+    codec = ffmpeg_root()
+    sources=[str(output/name) for name in MEDIA_FILES
+             if name.endswith(('.c','.m')) and (codec or name!='vita_audiodec.c')]
+    flags = []
+    if codec:
+        lib = codec/'lib'
+        flags = ['-DVX_ENABLE_AUDIODEC','-isystem',str(codec/'include'),
+                 '-L'+str(lib),'-lavcodec','-lavutil','-Xlinker','-rpath','-Xlinker',str(lib)]
+    return [*MEDIA_FLAGS,*sources,str(output/'vitanx_media.c'),*flags,
             *[arg for name in MEDIA_FRAMEWORKS for arg in ('-framework',name)]]
 
 class _GxmStats(C.Structure):
@@ -82,7 +116,7 @@ class RuntimeShaderTranslator:
 
     def _resolve(self,pointer,size):
         import hashlib
-        from vitaxnative.usse import translate_gxp
+        from vitaxnative.usse import translate_gxp_bytes
         # Native registration has checked backing memory and the declared span.
         # Retain a second bound before any ctypes read or filesystem operation.
         if not pointer or not 156<=size<=16*1024*1024:return None
@@ -96,16 +130,15 @@ class RuntimeShaderTranslator:
         try:
             path=self.output/(digest+'.gxp')
             with path.open('xb') as stream:stream.write(raw)
-            shader=translate_gxp(path)
+            shader=translate_gxp_bytes(raw, path)
             data=(C.c_uint8*size).from_buffer_copy(raw)
             msl=shader['msl'].encode('utf-8')
             inputs=shader['inputs']
             if len(inputs)>16:raise ValueError('runtime shader input limit')
             registers=(C.c_uint32*16)(*[p['resource_index'] for p in inputs])
             components=(C.c_uint32*16)(*[p['components'] for p in inputs])
-            interface=shader['interface']
             metadata=_Shader(data,size,msl,int(shader['stage']=='fragment'),shader['uniform_words'],len(inputs),
-                             shader['texture_mask'],int(interface['color'])|(int(interface['texcoord'])<<1),registers,components)
+                             shader['texture_mask'],shader['varying_mask'],registers,components)
             self.storage.append((data,msl,metadata))
             self.entries[digest]=C.addressof(metadata)
             record.update({k:v for k,v in shader.items() if k not in ('msl','operations')})

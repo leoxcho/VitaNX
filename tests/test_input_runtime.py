@@ -15,7 +15,7 @@ class InputRuntimeTests(unittest.TestCase):
 #include <assert.h>
 #include <string.h>
 static uint8_t memory[256];static uint32_t r[16];static int close_requested;
-int vx_display_input_state(vx_window_input *out){*out=(vx_window_input){.buttons=0x4010,.lx=3,.ly=255,.rx=42,.ry=0,.connected=1,.close_requested=close_requested,.touch_x={1919,42},.touch_y={1087,77},.touch_down={1,1},.touch_id={17,4}};return 0;}
+int vx_display_input_state(vx_window_input *out){*out=(vx_window_input){.buttons=0x4110,.ext_buttons=0x402,.left_trigger=33,.lx=3,.ly=255,.rx=42,.ry=0,.connected=1,.close_requested=close_requested,.touch_x={1919,42},.touch_y={1087,77},.touch_down={1,1},.touch_id={17,4}};return 0;}
 void vx_display_shutdown(void){}
 int vx_display_import(uint32_t n,uint32_t *r,uint8_t *m,size_t s,uint32_t b,uint32_t *out){(void)n;(void)r;(void)m;(void)s;(void)b;(void)out;return 0;}
 static uint32_t call(uint32_t nid,uint32_t a,uint32_t b,uint32_t c){r[0]=a;r[1]=b;r[2]=c;return vx_import(nid,r,memory,sizeof memory);}
@@ -30,9 +30,9 @@ int main(void){
    assert(found);window_count++;
   }
  }
- assert(window_count==11);
+ assert(window_count==sizeof window_nids/sizeof *window_nids);
  assert(call(0xA9C3CED6,0,base+64,1)==1);
- assert(memory[72]==0x10&&memory[73]==0x40);assert(memory[76]==128&&memory[79]==128);
+ assert(memory[72]==0x10&&memory[73]==0x41);assert(memory[76]==128&&memory[79]==128);
  assert(memory[80]==255&&memory[90]==255&&memory[91]==0);
  assert(call(0xA497B150,1,0,0)==0);
  assert(call(0xEC752AAF,base+32,0,0)==0&&memory[32]==1);
@@ -44,7 +44,15 @@ int main(void){
  assert(call(0xA9C3CED6,0,base-1,1)==0x80020006u);
  assert(call(0xA9C3CED6,0,base+225,1)==0x80020006u);
  assert(call(0xEC752AAF,base+253,0,0)==0x80020006u);
- assert(call(0xA497B150,2,0,0)==0x80020005u);
+ assert(call(0xA497B150,2,0,0)==1);
+ assert(call(0xA497B150,3,0,0)==0x80020005u);
+ assert(call(0x104ED1A7,0,base+64,1)==1&&memory[72]==0xef&&memory[73]==0xbe);
+ assert(call(0xB1DC4378,2,0,0)==0);
+ assert(call(0xBD27F830,base+32,0,0)==0&&memory[32]==2);
+ assert(call(0x860BF292,0,base+64,1)==1);
+ assert(memory[72]==0x12&&memory[73]==0x44&&memory[76]==3&&memory[84]==33);
+ assert(call(0x15F81E8C,1,base+64,1)==0);
+ assert(call(0x324F1B66,base+32,0,0)==0&&memory[32]==1&&memory[33]==0);
  assert(call(0x67E7AB83,0,base+64,1)==1);assert(call(0x67E7AB83,0,base+64,1)==1);
  assert(call(0xFF082DF0,0,base+64,1)==1&&memory[76]==0);
  assert(!call(0x1B9C5D14,0,1,0));assert(!call(0xB18370C2,0,0,0));

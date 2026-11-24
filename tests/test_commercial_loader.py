@@ -7,7 +7,7 @@ import tempfile
 from vitaxnative.commercial_loader import (map_commercial_game, map_module,
                                             make_link_plan, _thumb_mov_imm, PT_SCE_RELA)
 
-ROOT=Path(os.environ.get('GRAVITY_ELF_DIR', '__optional_private_fixture_not_configured__'))
+ROOT=Path(os.environ.get('GRAVITY_ELF_DIR',str(Path.home() / 'gravity-rush-arm-extracted')))
 PATHS=[ROOT/(name+'.elf') for name in ('eboot','libc','libfios2','libult')]
 
 @unittest.skipUnless(all(p.is_file() for p in PATHS),'Requires four user-supplied, decrypted Gravity Rush ARM ELFs')

@@ -16,7 +16,8 @@ def system_provider(value):
 p.add_argument('--sysmodule',action='append',type=system_provider,default=[],help='Explicit authorized plaintext system-module provider, ID=PATH')
 p.add_argument('--boundary-handler',type=Path,help='Developer Python resolver exporting resolve(session, import_info, cpu_pointer); runs at a live import boundary')
 p.add_argument('--apputil-config',type=Path,help='Explicit local AppUtil device configuration JSON')
-p.add_argument('--assets',type=Path,help='Read-only original game asset root; saves stay in output')
+p.add_argument('--assets',type=Path,help='Read-only original game asset root')
+p.add_argument('--save-storage',type=Path,help='Persistent save parent directory, keyed by Vita title ID or executable hash')
 p.add_argument('--native-cache',type=Path)
 p.add_argument('--media',action='store_true',help='Connect existing GXM/Metal, Core Audio, controller and touch bridges to shared guest memory')
 p.add_argument('--max-regions',type=int,default=128)
@@ -32,7 +33,7 @@ try:
         handler=runpy.run_path(str(a.boundary_handler)).get('resolve')
         if not callable(handler):raise ValueError('boundary handler must export callable resolve')
     result=ModuleSession([a.main,*a.module],a.output,deferred=a.deferred,
-                         instruction_limit=a.instruction_limit,allow_unresolved=a.diagnostic_unresolved,heap_size=a.heap_mib*1024*1024,execution_checkpoints=a.checkpoint_at,native_cache=a.native_cache,max_regions=a.max_regions,assets=a.assets,media=a.media,sysmodules=dict(a.sysmodule),boundary_handler=handler,apputil_config=json.loads(a.apputil_config.read_text()) if a.apputil_config else None).run()
+                         instruction_limit=a.instruction_limit,allow_unresolved=a.diagnostic_unresolved,heap_size=a.heap_mib*1024*1024,execution_checkpoints=a.checkpoint_at,native_cache=a.native_cache,max_regions=a.max_regions,assets=a.assets,media=a.media,save_storage=a.save_storage,sysmodules=dict(a.sysmodule),boundary_handler=handler,apputil_config=json.loads(a.apputil_config.read_text()) if a.apputil_config else None).run()
     print(json.dumps(result,indent=2));sys.exit(int(result['status']!=0))
 except (ValueError,OSError,RuntimeError) as e:
     print(json.dumps({'error':str(e),'commercial_compatibility':False}),file=sys.stderr);sys.exit(1)

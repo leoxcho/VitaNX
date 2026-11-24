@@ -13,6 +13,14 @@
 @property(nonatomic,strong) id<MTLCommandQueue> queue;
 @property(nonatomic,strong) id<MTLTexture> target;
 @property(nonatomic,strong) id<MTLRenderPipelineState> pipeline;
+@property(nonatomic) unsigned gxpCull;
+@property(nonatomic) BOOL gxpWireframe;
+@property(nonatomic) BOOL gxpScissorConfigured;
+@property(nonatomic) NSUInteger gxpScissorCount;
+@property(nonatomic) MTLScissorRect gxpScissor0;
+@property(nonatomic) MTLScissorRect gxpScissor1;
+@property(nonatomic) MTLScissorRect gxpScissor2;
+@property(nonatomic) MTLScissorRect gxpScissor3;
 @property(nonatomic,strong) id<MTLRenderPipelineState> gxpPipeline;
 @property(nonatomic,strong) id<MTLTexture> depth;
 @property(nonatomic,strong) id<MTLDepthStencilState> depthState;
@@ -33,8 +41,8 @@
 @property(nonatomic) size_t gxpVWords;
 @property(nonatomic) size_t gxpFWords;
 @property(nonatomic) uint32_t gxpTextureMask;
-@property(nonatomic,strong) id<MTLTexture> gxpTexture;
-@property(nonatomic,strong) id<MTLSamplerState> gxpSampler;
+@property(nonatomic,strong) NSMutableDictionary<NSNumber *,id<MTLTexture>> *gxpTextures;
+@property(nonatomic,strong) NSMutableDictionary<NSNumber *,id<MTLSamplerState>> *gxpSamplers;
 @property(nonatomic,strong) id<MTLRenderPipelineState> presentation;
 @property(nonatomic,strong) id<MTLRenderPipelineState> windowPresentation;
 @property(nonatomic,strong) id<MTLTexture> input;
@@ -220,7 +228,7 @@ int vx_metal_gxp_pipeline(vx_metal *context,const char *vertex_msl,const char *f
  if(!context)return VX_METAL_INVALID;
  @autoreleasepool {VXMetalContext *ctx=(__bridge VXMetalContext *)context;
   ctx.gxpPipeline=nil;ctx.gxpStride=0;
-  if(!vertex_msl||!fragment_msl||!attributes||!count||count>16||!stride||stride>4096||stride%4||vwords>1024||fwords>1024||texture_mask>1||
+  if(!vertex_msl||!fragment_msl||!attributes||!count||count>16||!stride||stride>4096||stride%4||vwords>1024||fwords>1024||texture_mask>=1u<<VX_GXP_FRAGMENT_TEXTURES||
      strnlen(vertex_msl,1024*1024)==1024*1024||strnlen(fragment_msl,1024*1024)==1024*1024)return VX_METAL_INVALID;
   MTLVertexDescriptor *vd=[MTLVertexDescriptor vertexDescriptor];
   for(size_t i=0;i<count;i++){
@@ -383,30 +391,129 @@ int vx_metal_gxp_stencil_readback(vx_metal *context,uint8_t *data,size_t capacit
  }
 }
 
-int vx_metal_gxp_upload_texture(vx_metal *context,const uint8_t *rgba,size_t capacity,
- uint32_t width,uint32_t height,size_t stride,int linear_filter){
- size_t needed,output;
- if(!context||!rgba||(linear_filter!=0&&linear_filter!=1)||vx_framebuffer_required(width,height,stride,VX_PIXELS_RGBA8,&needed,&output)||capacity<needed)return VX_METAL_INVALID;
+typedef struct {MTLPixelFormat pixel;unsigned bytes,channels;} vx_sample_format;
+static vx_sample_format sample_format(uint32_t format){
+ if(format&0x00ff8fffu)return (vx_sample_format){0};
+ unsigned swizzle=(format>>12)&7;
+ switch(format>>24){
+  case 0x00:return (vx_sample_format){MTLPixelFormatR8Unorm,1,1};
+  case 0x01:return (vx_sample_format){MTLPixelFormatR8Snorm,1,1};
+  case 0x07:return swizzle<6?(vx_sample_format){MTLPixelFormatRG8Unorm,2,2}:(vx_sample_format){0};
+  case 0x08:return swizzle<6?(vx_sample_format){MTLPixelFormatRG8Snorm,2,2}:(vx_sample_format){0};
+  case 0x09:return (vx_sample_format){MTLPixelFormatR16Unorm,2,1};
+  case 0x0a:return (vx_sample_format){MTLPixelFormatR16Snorm,2,1};
+  case 0x0b:return (vx_sample_format){MTLPixelFormatR16Float,2,1};
+  case 0x0c:return (vx_sample_format){MTLPixelFormatRGBA8Unorm,4,4};
+  case 0x0d:return (vx_sample_format){MTLPixelFormatRGBA8Snorm,4,4};
+  case 0x0f:return swizzle<6?(vx_sample_format){MTLPixelFormatRG16Unorm,4,2}:(vx_sample_format){0};
+  case 0x10:return swizzle<6?(vx_sample_format){MTLPixelFormatRG16Snorm,4,2}:(vx_sample_format){0};
+  case 0x11:return swizzle<6?(vx_sample_format){MTLPixelFormatRG16Float,4,2}:(vx_sample_format){0};
+  case 0x1b:return (vx_sample_format){MTLPixelFormatRGBA16Float,8,4};
+  default:return (vx_sample_format){0};
+ }
+}
+unsigned vx_metal_gxp_texture_pixel_bytes(uint32_t format){
+ return sample_format(format).bytes;
+}
+static MTLTextureSwizzleChannels sample_swizzle(unsigned channels,unsigned mode){
+ /* Vita names list fields from most significant to least significant. */
+ static const unsigned single[8][4]={{0,4,4,5},{0,4,4,4},{0,5,5,5},{0,0,0,0},
+                                      {0,0,0,4},{0,0,0,5},{4,4,4,0},{5,5,5,0}};
+ static const unsigned dual[6][4]={{0,1,4,5},{0,1,4,4},{0,0,0,1},{1,1,1,0},
+                                    {0,1,0,1},{1,0,4,4}};
+ static const unsigned quad[8][4]={{0,1,2,3},{2,1,0,3},{3,2,1,0},{1,2,3,0},
+                                    {0,1,2,5},{2,1,0,5},{3,2,1,5},{1,2,3,5}};
+ static const MTLTextureSwizzle values[]={MTLTextureSwizzleRed,MTLTextureSwizzleGreen,
+  MTLTextureSwizzleBlue,MTLTextureSwizzleAlpha,MTLTextureSwizzleZero,MTLTextureSwizzleOne};
+ const unsigned *p=channels==1?single[mode]:channels==2?dual[mode]:quad[mode];
+ return MTLTextureSwizzleChannelsMake(values[p[0]],values[p[1]],values[p[2]],values[p[3]]);
+}
+int vx_metal_gxp_upload_texture_format(vx_metal *context,unsigned slot,const uint8_t *data,size_t capacity,
+ uint32_t width,uint32_t height,size_t stride,int linear_filter,uint32_t format){
+ vx_sample_format desc=sample_format(format);
+ size_t row=(size_t)width*desc.bytes;
+ if(!context||slot>=VX_GXP_FRAGMENT_TEXTURES||!data||!desc.bytes||!width||!height||width>4096||height>4096||
+    (linear_filter!=0&&linear_filter!=1)||stride<row||stride%desc.bytes||capacity<row||
+    (height-1)>(capacity-row)/stride)return VX_METAL_INVALID;
  @autoreleasepool {VXMetalContext *ctx=(__bridge VXMetalContext *)context;
-  MTLTextureDescriptor *td=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:width height:height mipmapped:NO];
+  MTLTextureDescriptor *td=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:desc.pixel width:width height:height mipmapped:NO];
+  td.swizzle=sample_swizzle(desc.channels,(format>>12)&7);
   td.storageMode=MTLStorageModeShared;td.usage=MTLTextureUsageShaderRead;
   id<MTLTexture> texture=[ctx.device newTextureWithDescriptor:td];if(!texture)return VX_METAL_ALLOCATION;
-  [texture replaceRegion:MTLRegionMake2D(0,0,width,height) mipmapLevel:0 withBytes:rgba bytesPerRow:stride];
+  [texture replaceRegion:MTLRegionMake2D(0,0,width,height) mipmapLevel:0 withBytes:data bytesPerRow:stride];
   MTLSamplerDescriptor *sd=[MTLSamplerDescriptor new];sd.normalizedCoordinates=YES;
   sd.sAddressMode=sd.tAddressMode=MTLSamplerAddressModeClampToEdge;
   sd.minFilter=sd.magFilter=linear_filter?MTLSamplerMinMagFilterLinear:MTLSamplerMinMagFilterNearest;
   id<MTLSamplerState> sampler=[ctx.device newSamplerStateWithDescriptor:sd];if(!sampler)return VX_METAL_ALLOCATION;
-  ctx.gxpTexture=texture;ctx.gxpSampler=sampler;return VX_METAL_OK;
+  if(!ctx.gxpTextures)ctx.gxpTextures=[NSMutableDictionary new];
+  if(!ctx.gxpSamplers)ctx.gxpSamplers=[NSMutableDictionary new];
+  ctx.gxpTextures[@(slot)]=texture;
+  ctx.gxpSamplers[@(slot)]=sampler;
+  return VX_METAL_OK;
  }
 }
-static int gxp_draw(vx_metal *context,const void *vertices,size_t vertex_bytes,size_t count,
+int vx_metal_gxp_upload_texture_at(vx_metal *context,unsigned slot,const uint8_t *rgba,size_t capacity,
+ uint32_t width,uint32_t height,size_t stride,int linear_filter){
+ return vx_metal_gxp_upload_texture_format(context,slot,rgba,capacity,width,height,stride,linear_filter,0x0c000000);
+}
+int vx_metal_gxp_upload_texture(vx_metal *context,const uint8_t *rgba,size_t capacity,
+ uint32_t width,uint32_t height,size_t stride,int linear_filter){
+ return vx_metal_gxp_upload_texture_at(context,0,rgba,capacity,width,height,stride,linear_filter);
+}
+int vx_metal_gxp_set_cull(vx_metal *context,unsigned mode){
+ if(!context||mode>2)return VX_METAL_INVALID;
+ VXMetalContext *ctx=(__bridge VXMetalContext *)context;
+ ctx.gxpCull=mode;
+ return VX_METAL_OK;
+}
+static void append_scissor(MTLScissorRect *rects,NSUInteger *count,NSUInteger x,NSUInteger y,
+                           NSUInteger right,NSUInteger bottom){
+ if(right>x&&bottom>y)rects[(*count)++]=(MTLScissorRect){x,y,right-x,bottom-y};
+}
+int vx_metal_gxp_set_raster(vx_metal *context,int wireframe,const uint32_t region[5]){
+ if(!context||!region)return VX_METAL_INVALID;
+ VXMetalContext *ctx=(__bridge VXMetalContext *)context;
+ NSUInteger width=ctx.target.width,height=ctx.target.height,count=0;
+ MTLScissorRect rects[4]={{0}};
+ /* GXM region bounds are inclusive and horizontal/vertical tile-aligned. */
+ NSUInteger left=MIN(width,region[1]&~31u);
+ NSUInteger top=MIN(height,region[2]&~31u);
+ NSUInteger right=MIN(width,((uint64_t)region[3]|31u)+1);
+ NSUInteger bottom=MIN(height,((uint64_t)region[4]|31u)+1);
+ switch(region[0]){
+  case 0:append_scissor(rects,&count,0,0,width,height);break;
+  case 0x40000000:break;
+  case 0xc0000000:append_scissor(rects,&count,left,top,right,bottom);break;
+  case 0x80000000:
+   append_scissor(rects,&count,0,0,width,top);
+   append_scissor(rects,&count,0,bottom,width,height);
+   append_scissor(rects,&count,0,top,left,bottom);
+   append_scissor(rects,&count,right,top,width,bottom);
+   break;
+  default:return VX_METAL_INVALID;
+ }
+ ctx.gxpWireframe=wireframe!=0;
+ ctx.gxpScissorConfigured=YES;
+ ctx.gxpScissorCount=count;
+ ctx.gxpScissor0=rects[0];ctx.gxpScissor1=rects[1];ctx.gxpScissor2=rects[2];ctx.gxpScissor3=rects[3];
+ return VX_METAL_OK;
+}
+static int gxp_draw(vx_metal *context,vx_metal_primitive primitive,const void *vertices,size_t vertex_bytes,size_t count,
  const uint32_t *vu,size_t vwords,const uint32_t *fu,size_t fwords,const float clear[4],int load){
- if(!context||!clear||count>65535||count%3||(count&&!vertices)||vwords>1024||fwords>1024||
+ MTLPrimitiveType topology;
+ switch(primitive){
+  case VX_METAL_TRIANGLES:if(count%3)return VX_METAL_INVALID;topology=MTLPrimitiveTypeTriangle;break;
+  case VX_METAL_LINES:if(count%2)return VX_METAL_INVALID;topology=MTLPrimitiveTypeLine;break;
+  case VX_METAL_TRIANGLE_STRIP:if(count<3)return VX_METAL_INVALID;topology=MTLPrimitiveTypeTriangleStrip;break;
+  default:return VX_METAL_INVALID;
+ }
+ if(!context||!clear||count>65535||(count&&!vertices)||vwords>1024||fwords>1024||
     (vwords&&!vu)||(fwords&&!fu))return VX_METAL_INVALID;
  for(unsigned i=0;i<4;i++)if(!isfinite(clear[i])||clear[i]<0||clear[i]>1)return VX_METAL_INVALID;
  @autoreleasepool {VXMetalContext *ctx=(__bridge VXMetalContext *)context;
   if((load&&!ctx.rendered)||!ctx.gxpPipeline||!ctx.gxpStride||count>vertex_bytes/ctx.gxpStride||vwords<ctx.gxpVWords||fwords<ctx.gxpFWords)return VX_METAL_INVALID;
-  if(ctx.gxpTextureMask&&(!ctx.gxpTexture||!ctx.gxpSampler))return VX_METAL_INVALID;
+  for(unsigned slot=0;slot<VX_GXP_FRAGMENT_TEXTURES;slot++)if((ctx.gxpTextureMask&(1u<<slot))&&
+    (!ctx.gxpTextures[@(slot)]||!ctx.gxpSamplers[@(slot)]))return VX_METAL_INVALID;
   if((ctx.depthEnabled&&(!ctx.depth||!ctx.depthState))||(ctx.stencilEnabled&&(!ctx.stencil||!ctx.depthState)))return VX_METAL_INVALID;
   ctx.rendered=NO;
   id<MTLBuffer> data=count?[ctx.device newBufferWithBytes:vertices length:count*ctx.gxpStride options:MTLResourceStorageModeShared]:nil;
@@ -424,21 +531,40 @@ static int gxp_draw(vx_metal *context,const void *vertices,size_t vertex_bytes,s
    pass.stencilAttachment.storeAction=MTLStoreActionStore;pass.stencilAttachment.clearStencil=ctx.stencilClear;}
   id<MTLRenderCommandEncoder> encoder=[buffer renderCommandEncoderWithDescriptor:pass];if(!encoder)return VX_METAL_COMMAND;
   if(ctx.depthEnabled||ctx.stencilEnabled){[encoder setDepthStencilState:ctx.depthState];[encoder setStencilFrontReferenceValue:ctx.stencilReference backReferenceValue:ctx.backStencilReference];}
+  [encoder setFrontFacingWinding:MTLWindingClockwise];
+  [encoder setTriangleFillMode:ctx.gxpWireframe?MTLTriangleFillModeLines:MTLTriangleFillModeFill];
+  [encoder setCullMode:ctx.gxpCull==1?MTLCullModeFront:ctx.gxpCull==2?MTLCullModeBack:MTLCullModeNone];
   [encoder setRenderPipelineState:ctx.gxpPipeline];uint32_t zero=0;
   [encoder setVertexBytes:vwords?vu:&zero length:vwords?vwords*4:4 atIndex:1];
   [encoder setFragmentBytes:fwords?fu:&zero length:fwords?fwords*4:4 atIndex:1];
-  if(ctx.gxpTextureMask){[encoder setFragmentTexture:ctx.gxpTexture atIndex:0];[encoder setFragmentSamplerState:ctx.gxpSampler atIndex:0];}
-  if(count){[encoder setVertexBuffer:data offset:0 atIndex:0];[encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:count];}
+  for(unsigned slot=0;slot<VX_GXP_FRAGMENT_TEXTURES;slot++)if(ctx.gxpTextureMask&(1u<<slot)){
+   [encoder setFragmentTexture:ctx.gxpTextures[@(slot)] atIndex:slot];
+   [encoder setFragmentSamplerState:ctx.gxpSamplers[@(slot)] atIndex:slot];
+  }
+  if(count){
+   [encoder setVertexBuffer:data offset:0 atIndex:0];
+   if(!ctx.gxpScissorConfigured)[encoder drawPrimitives:topology vertexStart:0 vertexCount:count];
+   else{
+    MTLScissorRect rects[4]={ctx.gxpScissor0,ctx.gxpScissor1,ctx.gxpScissor2,ctx.gxpScissor3};
+    for(NSUInteger i=0;i<ctx.gxpScissorCount;i++){
+     [encoder setScissorRect:rects[i]];
+     [encoder drawPrimitives:topology vertexStart:0 vertexCount:count];
+    }
+   }
+  }
   [encoder endEncoding];[buffer commit];[buffer waitUntilCompleted];
   if(buffer.status!=MTLCommandBufferStatusCompleted)return VX_METAL_COMMAND;
   ctx.rendered=YES;if(ctx.depthEnabled)ctx.depthValid=YES;if(ctx.stencilEnabled)ctx.stencilValid=YES;return VX_METAL_OK;
  }
 }
 int vx_metal_gxp_draw(vx_metal *c,const void *v,size_t bytes,size_t count,const uint32_t *vu,size_t vw,const uint32_t *fu,size_t fw,const float clear[4]){
- return gxp_draw(c,v,bytes,count,vu,vw,fu,fw,clear,0);
+ return gxp_draw(c,VX_METAL_TRIANGLES,v,bytes,count,vu,vw,fu,fw,clear,0);
 }
 int vx_metal_gxp_draw_load(vx_metal *c,const void *v,size_t bytes,size_t count,const uint32_t *vu,size_t vw,const uint32_t *fu,size_t fw){
- const float unused[4]={0};return gxp_draw(c,v,bytes,count,vu,vw,fu,fw,unused,1);
+ return vx_metal_gxp_draw_primitive_load(c,VX_METAL_TRIANGLES,v,bytes,count,vu,vw,fu,fw);
+}
+int vx_metal_gxp_draw_primitive_load(vx_metal *c,vx_metal_primitive primitive,const void *v,size_t bytes,size_t count,const uint32_t *vu,size_t vw,const uint32_t *fu,size_t fw){
+ const float unused[4]={0};return gxp_draw(c,primitive,v,bytes,count,vu,vw,fu,fw,unused,1);
 }
 void vx_metal_destroy(vx_metal *context) {
  if(context){@autoreleasepool {id released=CFBridgingRelease(context);(void)released;}}
@@ -503,8 +629,12 @@ int vx_metal_present_layer(vx_metal *context,void *layer,int linear_filter){
   if(!ctx.sampler||ctx.linear!=linear_filter){int status=vx_metal_set_filter(context,linear_filter);if(status)return status;}
   id<CAMetalDrawable> drawable=[surface nextDrawable];if(!drawable)return VX_METAL_COMMAND;
   id<MTLCommandBuffer> buffer=[ctx.queue commandBuffer];if(!buffer)return VX_METAL_COMMAND;
-  MTLRenderPassDescriptor *pass=[MTLRenderPassDescriptor renderPassDescriptor];pass.colorAttachments[0].texture=drawable.texture;pass.colorAttachments[0].loadAction=MTLLoadActionDontCare;pass.colorAttachments[0].storeAction=MTLStoreActionStore;
+  MTLRenderPassDescriptor *pass=[MTLRenderPassDescriptor renderPassDescriptor];pass.colorAttachments[0].texture=drawable.texture;pass.colorAttachments[0].loadAction=MTLLoadActionClear;pass.colorAttachments[0].clearColor=MTLClearColorMake(0,0,0,1);pass.colorAttachments[0].storeAction=MTLStoreActionStore;
   id<MTLRenderCommandEncoder> encoder=[buffer renderCommandEncoderWithDescriptor:pass];if(!encoder)return VX_METAL_COMMAND;
+  double width=drawable.texture.width,height=drawable.texture.height;
+  double scale=fmin(width/ctx.target.width,height/ctx.target.height);
+  double image_width=ctx.target.width*scale,image_height=ctx.target.height*scale;
+  [encoder setViewport:(MTLViewport){(width-image_width)/2,(height-image_height)/2,image_width,image_height,0,1}];
   [encoder setRenderPipelineState:ctx.windowPresentation];[encoder setFragmentTexture:ctx.target atIndex:0];[encoder setFragmentSamplerState:ctx.sampler atIndex:0];[encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];[encoder endEncoding];
   [buffer presentDrawable:drawable];[buffer commit];[buffer waitUntilCompleted];return buffer.status==MTLCommandBufferStatusCompleted?0:VX_METAL_COMMAND;
  }

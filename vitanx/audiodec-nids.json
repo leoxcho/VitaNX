@@ -1,0 +1,70 @@
+{
+  "source": "VitaSDK libSceAudiodec_stub.a (SceAudiodecUser)",
+  "bindings": [
+    {
+      "library_nid": "2aa62046",
+      "function_nid": "f72f9b64",
+      "name": "sceAudiodecClearContext"
+    },
+    {
+      "library_nid": "2aa62046",
+      "function_nid": "4dfd3aaa",
+      "name": "sceAudiodecCreateDecoder"
+    },
+    {
+      "library_nid": "2aa62046",
+      "function_nid": "56085dfb",
+      "name": "sceAudiodecCreateDecoderExternal"
+    },
+    {
+      "library_nid": "2aa62046",
+      "function_nid": "ccdaba04",
+      "name": "sceAudiodecDecode"
+    },
+    {
+      "library_nid": "2aa62046",
+      "function_nid": "8018aa9b",
+      "name": "sceAudiodecDecodeNFrames"
+    },
+    {
+      "library_nid": "2aa62046",
+      "function_nid": "68f4a9cb",
+      "name": "sceAudiodecDecodeNStreams"
+    },
+    {
+      "library_nid": "2aa62046",
+      "function_nid": "e7a24e16",
+      "name": "sceAudiodecDeleteDecoder"
+    },
+    {
+      "library_nid": "2aa62046",
+      "function_nid": "e4ea05bb",
+      "name": "sceAudiodecDeleteDecoderExternal"
+    },
+    {
+      "library_nid": "2aa62046",
+      "function_nid": "db712abc",
+      "name": "sceAudiodecGetContextSize"
+    },
+    {
+      "library_nid": "2aa62046",
+      "function_nid": "883b0cf5",
+      "name": "sceAudiodecGetInternalError"
+    },
+    {
+      "library_nid": "2aa62046",
+      "function_nid": "445c2cef",
+      "name": "sceAudiodecInitLibrary"
+    },
+    {
+      "library_nid": "2aa62046",
+      "function_nid": "2742e642",
+      "name": "sceAudiodecPartlyDecode"
+    },
+    {
+      "library_nid": "2aa62046",
+      "function_nid": "45719b9d",
+      "name": "sceAudiodecTermLibrary"
+    }
+  ]
+}

@@ -74,7 +74,7 @@ class AppUtil:
 
     def _mount(self):
         if self.root is not None:return
-        root=self.session.output/'saves'
+        root=getattr(self.session,'save_path',self.session.output/'saves')
         self.root=os.open(root,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
         try:
             try:os.mkdir('.vitanx-apputil',mode=0o700,dir_fd=self.root)
@@ -93,7 +93,7 @@ class AppUtil:
         if name.startswith('savedata0:'):name=name[10:];name=name[1:] if name.startswith('/') else name
         if not name or ':' in name or '\\' in name:raise AppError(PERMISSION)
         parts=name.split('/')
-        if any(not p or p in ('.','..') or p.startswith('.vitanx-') for p in parts):raise AppError(PERMISSION)
+        if any(not p or p in ('.','..') or p.lower().startswith('.vitanx-') for p in parts):raise AppError(PERMISSION)
         return parts
 
     def parent(self,parts):

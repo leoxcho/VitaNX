@@ -1,0 +1,171 @@
+{
+  "source": "VitaSDK db/360/SceNgsUser.yml",
+  "bindings": [
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "5551410d"
+    },
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "1ddbebeb"
+    },
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "8a88e665"
+    },
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "fb8174b1"
+    },
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "ab6bef8f"
+    },
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "3d46d8a7"
+    },
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "fa0a0f34"
+    },
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "bb13373d"
+    },
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "0e291aad"
+    },
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "d7786e99"
+    },
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "54cfb981"
+    },
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "9ab87e71"
+    },
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "431bf3ab"
+    },
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "b307185e"
+    },
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "01a52e3a"
+    },
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "17a6f564"
+    },
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "24e909a8"
+    },
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "c9b8c0b4"
+    },
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "0d5399cf"
+    },
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "45cf2a73"
+    },
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "79a121d1"
+    },
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "e0ac8776"
+    },
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "6ce8b36f"
+    },
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "ed14cf4a"
+    },
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "477318c0"
+    },
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "0a92e4ec"
+    },
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "fe1a98e9"
+    },
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "dd5ca10b"
+    },
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "4a25bebc"
+    },
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "684f080c"
+    },
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "64d80013"
+    },
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "b9d971f2"
+    },
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "0a93ea96"
+    },
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "d668b49c"
+    },
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "d0c9ae5a"
+    },
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "98703dbc"
+    },
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "a3c807bc"
+    },
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "bd6f57f0"
+    },
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "a0f5402d"
+    },
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "2a9fa501",
+      "name": "sceNgsAT9GetSectionDetails"
+    },
+    {
+      "library_nid": "b01598d9",
+      "function_nid": "214485d6",
+      "name": "sceNgsVoiceDefGetPauserBuss"
+    }
+  ]
+}

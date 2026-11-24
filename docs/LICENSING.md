@@ -16,9 +16,11 @@ licenses individually; do not assume every upstream file has identical terms.
 NXNative-next is MIT licensed; the complete license is retained in
 NXNATIVE_MIT_LICENSE.txt. Its implementation is reference-only in this milestone.
 
-The project owner has confirmed ownership of the inherited VitaXNative source and approved
-releasing code they control under MIT. Existing third-party per-file notices remain intact.
-Third-party material and synthetic fixtures still require provenance checks before publication.
+VitaXNative is the user's existing local source, reused under the user's explicit
+instruction for this private project. No top-level license was found in the
+inspected root. Existing per-file notices remain intact. This import is not a
+claim that all legacy code can be relicensed or publicly redistributed. Audit
+legacy provenance and choose a compatible project-wide license before publishing.
 No public release or blanket relicensing was performed. The plaintext synthetic
 fixture's own manifest records its original homebrew provenance.
 
@@ -66,13 +68,3 @@ of original firmware behavior or permission to redistribute commercial inputs.
 CommonDialog configuration is also original host code, based on public VitaSDK
 common_dialog.h layouts/errors/default sentinels; the inspected Vita3K setter is
 unimplemented. Power was researched but no implementation or success stub added.
-
-## Public-release licensing decision (2026-11-20)
-
-The owner of VitaXNative confirmed ownership and approved an MIT-licensed,
-open-source VitaNX repository accepting community contributions. The repository
-LICENSE applies to original code controlled by the project owner, subject to
-existing third-party notices. This confirmation does not establish ownership
-of separately sourced third-party code or fixtures. Verify those components
-before publication. The NXNative MIT notice is retained for attribution and
-is not a claim that NXNative code is included.

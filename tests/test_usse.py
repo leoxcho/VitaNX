@@ -41,7 +41,7 @@ def fragment():
 
 def semantic_c(result):
     """Independent C lowering for native register/numeric differential checks."""
-    lines=['#include <stdint.h>','#include <string.h>',
+    lines=['#include <stdint.h>','#include <string.h>','#include <math.h>',
            'void shader(const uint32_t *p,const uint32_t *s,uint32_t *result){',
            'uint32_t pa[128],sa[128],out[128]={0},tmp[128]={0};memcpy(pa,p,512);memcpy(sa,s,512);']
     for op in result['operations']:
@@ -55,7 +55,7 @@ def semantic_c(result):
                 lines.append(f'uint32_t b{i}={ref(r)};float f{i};memcpy(&f{i},&b{i},4);values[{i}]=(_Float16)f{i};')
             for i,r in enumerate(op['destinations']):lines.append(f'memcpy(&{ref(r)},values+{i*2},4);')
             lines+=['}']
-        elif op['opcode'] in ('ADD_F32','MUL_F32'):
+        elif op['opcode'] in ('ADD_F32','MUL_F32','MIN_F32','MAX_F32'):
             lines+=['{']
             for i,r in enumerate(op['sources']):
                 value=ref(r);modifier=op['modifiers'][i%2]
@@ -63,7 +63,14 @@ def semantic_c(result):
                 if modifier&1:value=f'({value}^0x80000000u)'
                 lines.append(f'uint32_t b{i}={value};float f{i};memcpy(&f{i},&b{i},4);')
             for i,r in enumerate(op['destinations']):
-                lines.append(f'float v{i}=f{i*2}{"+" if op["opcode"]=="ADD_F32" else "*"}f{i*2+1};')
+                left,right=f'f{i*2}',f'f{i*2+1}'
+                if op['opcode'] in ('MIN_F32','MAX_F32'):
+                    function='fminf' if op['opcode']=='MIN_F32' else 'fmaxf'
+                    expression=f'{function}({left},{right})'
+                else:
+                    operator='+' if op['opcode']=='ADD_F32' else '*'
+                    expression=f'{left}{operator}{right}'
+                lines.append(f'float v{i}={expression};')
             for i,r in enumerate(op['destinations']):lines.append(f'memcpy(&{ref(r)},&v{i},4);')
             lines+=['}']
     lines+=['memcpy(result,'+('out' if result['stage']=='vertex' else 'pa')+',512);','}']
@@ -86,6 +93,114 @@ class UsseTests(unittest.TestCase):
             subprocess.run(['clang','-O2',str(root/'test.c'),'-o',str(root/'test')],check=True,capture_output=True)
             process=subprocess.run([root/'test'],capture_output=True,timeout=5)
             self.assertEqual(process.returncode,0,process.stderr)
+
+    def test_predicated_backedge(self):
+        data=fragment()
+        data.extend(bytes(16))
+        struct.pack_into('<I',data,8,len(data))
+        struct.pack_into('<I',data,60,4)
+        pattern=PATTERNS['VTST']
+        fields={'a':1,'z':1,'k':2,'f':2,'u':14,'q':1}
+        compare=0
+        for bit,field in enumerate(reversed(pattern)):
+            value=int(field) if field in '01' else (fields.get(field,0)>>pattern[len(pattern)-bit:].count(field))&1
+            compare|=value<<bit
+        # Compare COLOR.x and COLOR.z to set p0. A true p0 retries the
+        # comparison. False falls through to the usual fragment output pack.
+        struct.pack_into('<4Q',data,196,0xfa44070000000000,compare,
+                         0xf9000040000fffff,0x40800d7ea0198002)
+        result=self.translate(data)
+        self.assertEqual([op['opcode'] for op in result['operations']],['PHAS','CMP_F32','BR','PACK_F16'])
+        self.assertEqual(result['operations'][2]['target'],-1)
+        self.assertIn('pred[0]=(as_type<float>(pa[0]) == as_type<float>(pa[2]));',result['msl'])
+        self.assertIn('pc=pred[0]?204u:220u',result['msl'])
+        struct.pack_into('<Q',data,204,0xf800094000000000)
+        with self.assertRaisesRegex(UnsupportedShader,'undefined or mistyped pred0'):
+            self.translate(data)
+
+    def test_forward_primary_phase_and_two_texture_resources(self):
+        data=fragment()
+        data.extend(bytes(152))
+        for at,value in ((8,len(data)),(28,0x2101),(36,3),(40,288-40),
+                         (60,7),(64,224-64),(92,4),(128,1),(132,352-132),
+                         (144,1),(148,356-148)):
+            struct.pack_into('<I',data,at,value)
+        struct.pack_into('<HHH',data,168,2,0,4)
+        struct.pack_into('<4I',data,176,0xf100,0,0xc0,0x30)
+        struct.pack_into('<4I',data,192,0xf101,2,0xc0,0x30)
+        struct.pack_into('<H',data,58,2)
+        pattern=PATTERNS['SMP']
+        fields={'f':3,'d':1,'t':1,'k':1,'i':3,'q':2,'u':6}
+        sample=0
+        for bit,field in enumerate(reversed(pattern)):
+            value=int(field) if field in '01' else (fields.get(field,0)>>pattern[len(pattern)-bit:].count(field))&1
+            sample|=value<<bit
+        struct.pack_into('<7Q',data,224,
+                         0xfa44000000000004, 0xf800004000000002, 0xffffffffffffffff,
+                         0x40840d7ea0198002, 0xfa44070000000000, sample, 0x40800d7ea0198002)
+        for index,slot in enumerate((0,2,3)):
+            struct.pack_into('<iBBBBII',data,288+index*16,48-index*13,2,1,0,0,1,slot)
+        data[336:345]=b's0\0s2\0s3\0'
+        struct.pack_into('<2H',data,352,3*4,0)
+        struct.pack_into('<4H',data,356,19,0,12,4)
+        result=self.translate(data)
+        self.assertEqual(result['texture_mask'],13)
+        self.assertEqual(result['varying_mask'],6)
+        self.assertEqual([op['opcode'] for op in result['operations']],
+                         ['PHAS','BR','PACK_F16','PHAS','SAMPLE_F32','PACK_F16'])
+        self.assertIn('texture2.sample(sampler2,input.texcoord1)',result['msl'])
+        self.assertIn('texture3.sample(sampler3,float2(as_type<float>(pa[4]),as_type<float>(pa[5])))',
+                      result['msl'])
+        struct.pack_into('<Q',data,224,0xfa44000000000002)
+        with self.assertRaisesRegex(UnsupportedShader,'BR target leaves its phase'):
+            self.translate(data)
+
+    def test_v32_min_max_decode_and_lowering(self):
+        def instruction(op):
+            values={'e':3,'t':1,'k':2,'l':3,'f':2,'z':8,'w':4,'g':op}
+            pattern=PATTERNS['V32NMAD']
+            shifts={field:pattern.count(field) for field in values}
+            word=0
+            for field in pattern:
+                word <<= 1
+                if field in '01':
+                    word |= int(field)
+                elif field in values:
+                    shifts[field]-=1
+                    word |= (values[field]>>shifts[field])&1
+            return word
+
+        data=vertex()
+        data[216:216]=bytes(8)
+        for offset,value in ((8,len(data)),(40,240-40),(60,5),(148,232-148)):
+            struct.pack_into('<I',data,offset,value)
+        p=[0x3f800000,0x40800000,0,0x3f800000]
+        s=[0x40000000,0x40400000,0,0x3f800000]
+        for mode,function in ((5,'fmin'),(6,'fmax')):
+            struct.pack_into('<Q',data,216,instruction(mode))
+            result=self.translate(data)
+            self.assertIn(function+'(',result['msl'])
+            self.execute(result,p,s,p+(p[:1]+s[1:] if mode==5 else s[:1]+p[1:]))
+
+    def test_embedded_literals_initialize_secondary_registers(self):
+        data=vertex()
+        data.extend(bytes(34))
+        struct.pack_into('<I',data,8,len(data))
+        struct.pack_into('<I',data,36,1)  # The color source is now inline literals.
+        struct.pack_into('<II',data,112,4,280-116)
+        struct.pack_into('<4H',data,224,16,0,0,4)
+        for i,value in enumerate((0x3f800000,0x80000000,0x3e800000,0x7fc01234)):
+            struct.pack_into('<II',data,280+i*8,i,value)
+        result=self.translate(data)
+        self.assertEqual(result['uniform_words'],0)
+        self.assertIn('sa[1]=0x80000000u;',result['msl'])
+        self.assertIn('sa[3]=0x7fc01234u;',result['msl'])
+        struct.pack_into('<I',data,304,2)
+        with self.assertRaisesRegex(UnsupportedShader,'overlapping'):
+            self.translate(data)
+        struct.pack_into('<I',data,304,4)
+        with self.assertRaisesRegex(UnsupportedShader,'outside'):
+            self.translate(data)
 
     def test_actual_mov_fields_and_native_register_semantics(self):
         result=self.translate(vertex())

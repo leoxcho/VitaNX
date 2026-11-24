@@ -27,6 +27,10 @@ def device_bindings():
 SYSMODULE_LIBRARY='03fcf19d'
 SYSMODULE_APIS={'79a0160a':'load','53099b7a':'query','31d87805':'unload'}
 SYSMODULE_INVALID=0x805a1000;SYSMODULE_UNLOADED=0x805a1001;SYSMODULE_FATAL=0x805a10ff
+NATIVE_MEDIA_MODULES = {
+    0x0b: ('b01598d9', 'vx_ngs_shutdown', 'vitanx NGS compatibility provider'),
+    0x37: ('2aa62046', 'vx_audiodec_shutdown', 'vitanx AudioCodec compatibility provider'),
+}
 START='935cd196'; STOP='79f8e492'; SYSLIB='936c8a78'
 class LinkError(ValueError):pass
 class UnresolvedImport(LinkError):
@@ -180,7 +184,7 @@ class ModuleImage:
                 'variable_linking':self.variables,'source_sha256':self.inputs}
 
 class ModuleSession(NativeSession):
-    def __init__(self,paths,output,*,deferred=(),runtime_exports=None,instruction_limit=1000000,allow_unresolved=False,heap_size=4*1024*1024,execution_checkpoints=(),native_cache=None,max_regions=128,assets=None,sysmodules=None,native_apputil=True,apputil_config=None,boundary_handler=None,media=False):
+    def __init__(self,paths,output,*,deferred=(),runtime_exports=None,instruction_limit=1000000,allow_unresolved=False,heap_size=4*1024*1024,execution_checkpoints=(),native_cache=None,max_regions=128,assets=None,sysmodules=None,native_apputil=True,apputil_config=None,boundary_handler=None,media=False,save_storage=None,region_store=None):
         if boundary_handler is not None and not callable(boundary_handler):raise ValueError('boundary handler must be callable')
         self.boundary_handler=boundary_handler;self.handling_boundary=False
         output=Path(output).resolve()
@@ -216,6 +220,9 @@ class ModuleSession(NativeSession):
         if media:
             from .graphics import media_bindings
             bindings=media_bindings()
+            explicit_libraries = {library for ident, (library, _, _) in NATIVE_MEDIA_MODULES.items()
+                                  if ident in self.sysmodule_paths}
+            bindings = {key: value for key, value in bindings.items() if key[0] not in explicit_libraries}
             self.media_keys=set(bindings)
             intercepts.update(bindings)
         intercepts.update({(DIALOG_LIBRARY,'%08x'%nid):nid for nid in DIALOG_APIS})
@@ -247,7 +254,20 @@ class ModuleSession(NativeSession):
         source=self.process.emit(entry=starts[0] if starts else None)
         main=self.process.modules[0]
         tls=(main.new_base+int(main.metadata['tls']['start'],16),len(main.tls_template),main.tls_memsz)
-        super().__init__(source,output/'native',imports=self.process.hooks,instruction_limit=instruction_limit,tls=tls,decode_traps=True,heap_size=heap_size,region_entry=True,max_blocks=max_regions,execution_checkpoints=execution_checkpoints,native_cache=native_cache,assets=assets,partial_regions=True,translation_limit=1024,media=media)
+        save_path = None
+        if save_storage is not None:
+            from .installed_games import TITLE_ID
+            title = self.application_metadata.get('TITLE_ID')
+            if title is None:
+                title = 'elf-' + next(iter(self.process.inputs.values()))
+            elif not isinstance(title, str) or not TITLE_ID.fullmatch(title):
+                raise LinkError('invalid TITLE_ID for persistent saves')
+            save_path = Path(save_storage) / title
+        super().__init__(source,output/'native',imports=self.process.hooks,instruction_limit=instruction_limit,tls=tls,decode_traps=True,heap_size=heap_size,region_entry=True,max_blocks=max_regions,execution_checkpoints=execution_checkpoints,native_cache=native_cache,assets=assets,partial_regions=True,translation_limit=1024,media=media,save_path=save_path,region_store=region_store)
+        self.native_media_modules = {
+            ident: name for ident, (_, symbol, name) in NATIVE_MEDIA_MODULES.items()
+            if media and ident not in self.sysmodule_paths and hasattr(self.runtime, symbol)
+        }
         self.runtime.vn_guest_write_allowed.argtypes=[C.c_void_p,C.c_size_t]
         self.root_output=output
         if self.application_type is not None:
@@ -266,7 +286,7 @@ class ModuleSession(NativeSession):
         for i,(a,b) in enumerate(zip(old,new)):
             if a!=b:self.memory[i]=b
         self.image=new;self.source=source
-        cache=TranslationCache(source,self.cache.max_blocks,imports=self.process.hooks,live=True,decode_traps=True,translation_limit=self.cache.translation_limit,region_entry=True,partial_regions=True)
+        cache=TranslationCache(source,self.cache.max_blocks,imports=self.process.hooks,live=True,decode_traps=True,translation_limit=self.cache.translation_limit,region_entry=True,partial_regions=True,retain_images=False)
         self.cache=cache;self.regions.clear();self.region_by_pc.clear();self.decode_faults.clear()
         self._load(translated,'link-revision-%d'%self.process.revision)
         from vitaxnative.elf_segments import inspect_elf_segments
@@ -403,6 +423,8 @@ class ModuleSession(NativeSession):
             elif loaded:result=0
             elif ident==15 and self.apputil is not None and ident not in self.sysmodule_paths:
                 self.sysmodule_loaded[ident]='vitanx AppUtil compatibility provider (partial)';result=0
+            elif ident in self.native_media_modules:
+                self.sysmodule_loaded[ident]=self.native_media_modules[ident];result=0
             elif ident not in self.sysmodule_paths or ident in self.sysmodule_loading:result=SYSMODULE_FATAL
             else:
                 path=self.sysmodule_paths[ident]

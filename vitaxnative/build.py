@@ -180,15 +180,15 @@ int main(void){
             runner=runner.replace('vx_runtime_shutdown();free(mem);',
                 'vx_gxm_stats gs;vx_gxm_get_stats(&gs);fprintf(stderr,"vitaxnative: GXM fills %llu copies %llu bytes %llu draws %llu scenes %llu metal_status %d\\n",(unsigned long long)gs.fills,(unsigned long long)gs.copies,(unsigned long long)gs.bytes,(unsigned long long)gs.draws,(unsigned long long)gs.scenes,gs.metal_status);vx_runtime_shutdown();free(mem);')
         (stage/'main.c').write_text('#include <errno.h>\n' + runner)
-        for file in ('vita_runtime.c','vita_runtime.h','vita_guest.h','vita_kernel.inc','vita_memblock_diag.h'):
+        for file in ('vita_runtime.c','vita_runtime.h','vita_guest.h','vita_kernel.inc'):
             shutil.copyfile(ROOT/'runtime'/file,stage/file)
         command = [clang, '-arch','arm64','-std=c11','-O2','-Wall','-Wextra',
                    str(stage/'guest.c'),str(stage/'main.c'),str(stage/'vita_runtime.c'),
                    '-o',str(stage/'native')]
-        runtime_files = ['vita_runtime.c','vita_runtime.h','vita_guest.h','vita_kernel.inc','vita_memblock_diag.h']
+        runtime_files = ['vita_runtime.c','vita_runtime.h','vita_guest.h','vita_kernel.inc']
         if display is not None:
             runtime_files += ['vita_display.m','vita_display.h','vita_metal.m','vita_metal.h','vita_frame.c','vita_frame.h']
-            for file in runtime_files[5:]:
+            for file in runtime_files[4:]:
                 shutil.copyfile(ROOT/'runtime'/file,stage/file)
             command += ['-DVX_ENABLE_DISPLAY','-fobjc-arc',str(stage/'vita_display.m'),
                         str(stage/'vita_metal.m'),str(stage/'vita_frame.c'),

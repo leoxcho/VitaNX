@@ -7,6 +7,8 @@ typedef struct vx_window vx_window;
 typedef struct {
  uint32_t buttons;
  uint8_t lx,ly,rx,ry;
+ uint32_t ext_buttons;
+ uint8_t left_trigger,right_trigger;
  uint16_t touch_x[2],touch_y[2];
  uint8_t touch_down[2],touch_id[2];
  int connected,close_requested,suspended;

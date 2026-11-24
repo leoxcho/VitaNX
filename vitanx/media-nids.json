@@ -47,6 +47,60 @@
     {
       "library": "SceGxm",
       "library_nid": "f76b66bd",
+      "function_nid": "249d5b00",
+      "name": "sceGxmCreateDeferredContext"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "d6a2ff2f",
+      "name": "sceGxmDestroyDeferredContext"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "944d3f83",
+      "name": "sceGxmBeginCommandList"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "36d85916",
+      "name": "sceGxmEndCommandList"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "e8e139dd",
+      "name": "sceGxmExecuteCommandList"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "fa081d05",
+      "name": "sceGxmGetDeferredContextFragmentBuffer"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "ad8c2eba",
+      "name": "sceGxmGetDeferredContextVdmBuffer"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "87632b9c",
+      "name": "sceGxmGetDeferredContextVertexBuffer"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "e1ca72ae",
+      "name": "sceGxmSetCullMode"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
       "function_nid": "207af96b",
       "name": "sceGxmCreateRenderTarget"
     },
@@ -155,8 +209,92 @@
     {
       "library": "SceGxm",
       "library_nid": "f76b66bd",
+      "function_nid": "c6b3fcd0",
+      "name": "sceGxmSetDeferredContextFragmentBuffer"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "0b9d13ce",
+      "name": "sceGxmSetDeferredContextVdmBuffer"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "27cad127",
+      "name": "sceGxmSetDeferredContextVertexBuffer"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "fd93209d",
+      "name": "sceGxmSetFrontPolygonMode"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "70c86868",
+      "name": "sceGxmSetRegionClip"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "6a6013e1",
+      "name": "sceGxmSyncObjectCreate"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "889ae88c",
+      "name": "sceGxmSyncObjectDestroy"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "ec5c26b5",
+      "name": "sceGxmDisplayQueueAddEntry"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "b98c5b0d",
+      "name": "sceGxmDisplayQueueFinish"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "9f448e79",
+      "name": "sceGxmNotificationWait"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
       "function_nid": "c61e34fc",
       "name": "sceGxmMapMemory"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "008402c6",
+      "name": "sceGxmMapFragmentUsseMemory"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "fa437510",
+      "name": "sceGxmMapVertexUsseMemory"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "80ccedbb",
+      "name": "sceGxmUnmapFragmentUsseMemory"
+    },
+    {
+      "library": "SceGxm",
+      "library_nid": "f76b66bd",
+      "function_nid": "099134f5",
+      "name": "sceGxmUnmapVertexUsseMemory"
     },
     {
       "library": "SceGxm",
@@ -521,8 +659,26 @@
     {
       "library": "SceAudio",
       "library_nid": "438bb957",
+      "function_nid": "12fb1767",
+      "name": "sceAudioOutGetAdopt"
+    },
+    {
+      "library": "SceAudio",
+      "library_nid": "438bb957",
+      "function_nid": "940ce469",
+      "name": "sceAudioOutSetAlcMode"
+    },
+    {
+      "library": "SceAudio",
+      "library_nid": "438bb957",
       "function_nid": "9c8edaea",
       "name": "sceAudioOutGetConfig"
+    },
+    {
+      "library": "SceAudio",
+      "library_nid": "438bb957",
+      "function_nid": "b8ba0d07",
+      "name": "sceAudioOutSetConfig"
     },
     {
       "library": "SceAudio",
@@ -553,6 +709,90 @@
       "library_nid": "438bb957",
       "function_nid": "64167f11",
       "name": "sceAudioOutSetVolume"
+    },
+    {
+      "library": "SceCtrl",
+      "library_nid": "d197e3c7",
+      "function_nid": "104ed1a7",
+      "name": "sceCtrlPeekBufferNegative"
+    },
+    {
+      "library": "SceCtrl",
+      "library_nid": "d197e3c7",
+      "function_nid": "81a89660",
+      "name": "sceCtrlPeekBufferNegative2"
+    },
+    {
+      "library": "SceCtrl",
+      "library_nid": "d197e3c7",
+      "function_nid": "15f81e8c",
+      "name": "sceCtrlPeekBufferPositive2"
+    },
+    {
+      "library": "SceCtrl",
+      "library_nid": "d197e3c7",
+      "function_nid": "a59454d3",
+      "name": "sceCtrlPeekBufferPositiveExt"
+    },
+    {
+      "library": "SceCtrl",
+      "library_nid": "d197e3c7",
+      "function_nid": "860bf292",
+      "name": "sceCtrlPeekBufferPositiveExt2"
+    },
+    {
+      "library": "SceCtrl",
+      "library_nid": "d197e3c7",
+      "function_nid": "15f96fb0",
+      "name": "sceCtrlReadBufferNegative"
+    },
+    {
+      "library": "SceCtrl",
+      "library_nid": "d197e3c7",
+      "function_nid": "27a0c5fb",
+      "name": "sceCtrlReadBufferNegative2"
+    },
+    {
+      "library": "SceCtrl",
+      "library_nid": "d197e3c7",
+      "function_nid": "c4226a3e",
+      "name": "sceCtrlReadBufferPositive2"
+    },
+    {
+      "library": "SceCtrl",
+      "library_nid": "d197e3c7",
+      "function_nid": "e2d99296",
+      "name": "sceCtrlReadBufferPositiveExt"
+    },
+    {
+      "library": "SceCtrl",
+      "library_nid": "d197e3c7",
+      "function_nid": "a7178860",
+      "name": "sceCtrlReadBufferPositiveExt2"
+    },
+    {
+      "library": "SceCtrl",
+      "library_nid": "d197e3c7",
+      "function_nid": "b1dc4378",
+      "name": "sceCtrlSetSamplingModeExt"
+    },
+    {
+      "library": "SceCtrl",
+      "library_nid": "d197e3c7",
+      "function_nid": "bd27f830",
+      "name": "sceCtrlGetSamplingModeExt"
+    },
+    {
+      "library": "SceCtrl",
+      "library_nid": "d197e3c7",
+      "function_nid": "324f1b66",
+      "name": "sceCtrlGetControllerPortInfo"
+    },
+    {
+      "library": "SceCtrl",
+      "library_nid": "d197e3c7",
+      "function_nid": "1fffd965",
+      "name": "sceCtrlIsMultiControllerSupported"
     },
     {
       "library": "SceCtrl",

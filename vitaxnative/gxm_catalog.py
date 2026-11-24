@@ -25,7 +25,7 @@ def write_catalog(assets, destination):
         declarations.append(f'static const uint8_t vx_gxp_bytes_{index}[]={{'+','.join(str(b) for b in raw)+'};')
         registers=','.join(str(p['resource_index']) for p in shader['inputs']) or '0'
         components=','.join(str(p['components']) for p in shader['inputs']) or '0'
-        varyings=int(shader['interface']['color']) | (int(shader['interface']['texcoord'])<<1)
+        varyings=shader['varying_mask']
         entries.append('{'+f'vx_gxp_bytes_{index},{len(raw)},{json.dumps(shader["msl"])},'+
                        f'{int(shader["stage"]=="fragment")},{shader["uniform_words"]},{len(shader["inputs"])},{shader["texture_mask"]},{varyings},'+
                        '{'+registers+'},{'+components+'}}')

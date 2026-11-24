@@ -61,6 +61,12 @@ int vx_metal_gxp_stencil_state(vx_metal *context,unsigned compare,unsigned fail,
 int vx_metal_gxp_stencil_upload(vx_metal *context,const uint8_t *data,size_t capacity,size_t stride);
 int vx_metal_gxp_stencil_readback(vx_metal *context,uint8_t *data,size_t capacity);
 
+enum { VX_GXP_FRAGMENT_TEXTURES = 16 };
+unsigned vx_metal_gxp_texture_pixel_bytes(uint32_t format);
+int vx_metal_gxp_upload_texture_format(vx_metal *context,unsigned slot,const uint8_t *data,size_t capacity,
+ uint32_t width,uint32_t height,size_t stride,int linear_filter,uint32_t format);
+int vx_metal_gxp_upload_texture_at(vx_metal *context,unsigned slot,const uint8_t *rgba,size_t capacity,
+ uint32_t width,uint32_t height,size_t stride,int linear_filter);
 int vx_metal_gxp_upload_texture(vx_metal *context,const uint8_t *rgba,size_t capacity,
  uint32_t width,uint32_t height,size_t stride,int linear_filter);
 int vx_metal_gxp_draw(vx_metal *context,const void *vertices,size_t vertex_bytes,size_t count,
@@ -68,6 +74,15 @@ int vx_metal_gxp_draw(vx_metal *context,const void *vertices,size_t vertex_bytes
  const uint32_t *fragment_uniforms,size_t fragment_uniform_words,const float clear[4]);
 /* Preserve previous target contents for guest scene draws. Requires upload/draw. */
 int vx_metal_gxp_draw_load(vx_metal *context,const void *vertices,size_t vertex_bytes,size_t count,
+ const uint32_t *vertex_uniforms,size_t vertex_uniform_words,
+ const uint32_t *fragment_uniforms,size_t fragment_uniform_words);
+typedef enum {
+ VX_METAL_TRIANGLES, VX_METAL_LINES, VX_METAL_TRIANGLE_STRIP
+} vx_metal_primitive;
+int vx_metal_gxp_set_cull(vx_metal *context,unsigned mode);
+int vx_metal_gxp_set_raster(vx_metal *context,int wireframe,const uint32_t region[5]);
+int vx_metal_gxp_draw_primitive_load(vx_metal *context,vx_metal_primitive primitive,
+ const void *vertices,size_t vertex_bytes,size_t count,
  const uint32_t *vertex_uniforms,size_t vertex_uniform_words,
  const uint32_t *fragment_uniforms,size_t fragment_uniform_words);
 /* Synchronous GXM linear transfer primitives. No shaders supplied by the guest.

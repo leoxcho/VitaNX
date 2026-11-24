@@ -12,6 +12,10 @@ import zlib
 MAX_SIZE = 128 * 1024 * 1024
 
 
+class EncryptedSelfError(ValueError):
+    """The input still contains encrypted executable segments."""
+
+
 def _extent(data, offset, size):
     if offset < 0 or size < 0 or offset > len(data) or size > len(data) - offset:
         raise ValueError('SELF extent outside input')
@@ -80,7 +84,7 @@ def extract_self(path, output):
     """Create a new unpacked ELF; never overwrite output or change input."""
     layout = _parse_self_layout(path)
     if not layout['plaintext']:
-        raise ValueError('encrypted SELF segments: usable ARM code unavailable; decryption is not implemented')
+        raise EncryptedSelfError('encrypted SELF segments: usable ARM code unavailable; decryption is not implemented')
     result = bytearray(layout['elf_size'])
     header = bytearray(layout['_header'])
     # Section headers are not guaranteed to be preserved by SELF containers.

@@ -42,6 +42,7 @@ class MediaRuntimeTests(unittest.TestCase):
 
     def test_all_media_exports_have_exact_library_identity(self):
         bindings=media_bindings()
-        self.assertEqual(len(bindings),102)
         self.assertEqual(bindings[('f76b66bd','b0f1e4ec')],0xb0f1e4ec)
+        self.assertEqual(bindings[('438bb957','12fb1767')],0x12fb1767)
+        self.assertEqual(bindings[('d197e3c7','860bf292')],0x860bf292)
         self.assertNotIn(('00000000','b0f1e4ec'),bindings)

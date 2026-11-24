@@ -11,6 +11,7 @@ void vx_audio_get_stats(vx_audio_stats *out);
 #define VX_AUDIO_WOULD_BLOCK UINT32_C(0x7ffffff0)
 /* Internal scheduler contract: pending imports never escape to guest code. */
 void vx_audio_set_nonblocking(int enabled);
+uint32_t vx_audio_port_generation(uint32_t number);
 void vx_audio_pause(int paused);
 void vx_audio_shutdown(void);
 #endif

@@ -1,45 +1,95 @@
-# VitaNX (pre-alpha)
+# vitanx
 
-**License:** MIT for project-owned code (see [LICENSE](LICENSE) and [licensing notes](docs/LICENSING.md)). Contributions are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md).
+Independent experimental Vita ARMv7 → C → Apple Silicon ARM64 recompiler.
+This repository is separate from VitaXNative and NXNative-next. It does not
+convert arbitrary commercial games and does not include decryption or keys.
 
-**Experimental PlayStation Vita ARMv7 → Apple Silicon macOS translation research.**
-The goal is an NXNative-next-style *command-line converter* that produces standalone native macOS `.app` games. VitaNX is **not yet a working general-purpose commercial-game converter**. This source-only development snapshot does not contain Vita firmware, decryption keys, commercial executables, ROMs, saves or game assets.
+Run with Python 3.12+ and Apple command line tools on Apple Silicon macOS:
 
-## Current capabilities and limitations
-
-- ELF inspection, limited ARM32/Thumb2 → native translation, native-code caching, and synthetic homebrew app packaging are implemented.
-- Partial Vita module-loading, services, GXM/Metal, audio and controller interfaces exist. They are not a complete Vita environment.
-- Automatic installed-game discovery is read-only. The actual commercial-game conversion and gameplay pipeline is unfinished.
-- A synthetic standalone `.app` smoke test is **not** evidence of commercial gameplay compatibility.
-- No Vita3K installation, firmware, games, credentials or private paths are bundled.
-
-## Platform and prerequisites
-
-Use Python 3.12+ and Apple command-line development tools on Apple Silicon macOS. Some offline source/tests can run elsewhere; Metal and native macOS execution require suitable Apple hardware.
-
-```sh
+```
 ./vitanx-launch doctor
-./vitanx-launch inspect /path/to/authorized/arm32.elf
+./vitanx-launch inspect /absolute/path/to/authorized.elf
+./vitanx-launch discover /absolute/path/to/explicit-directory
+./vitanx-launch convert /absolute/path/to/authorized.elf builds/new-build
 ./vitanx-launch smoke builds/new-smoke
-./vitanx-launch convert /path/to/authorized/arm32.elf builds/new-conversion
+./vitanx-launch run-native /absolute/path/to/authorized.elf builds/new-execution
 ```
 
-`convert` builds a limited prototype standalone application from an authorized plaintext homebrew ELF; it does not reproduce a complete commercial PlayStation Vita runtime.
+Conversion does not run the executable. `smoke` runs the bundled original
+synthetic ABI fixture; `run-native` explicitly runs the supplied plaintext ELF
+with bounded on-demand translation. Optional `--imports manifest.json` supplies
+homebrew import bindings when module metadata is absent. Each output must be new. The smoke output contains a signed
+standalone `.app`, generated C, embedded guest image, diagnostics and hashes.
+This tests a fixed-address ARM ELF and Vita stdout ABI, not a full VitaSDK title.
+A Finder window, graphics, sound, input and gameplay are not validated.
 
-For read-only Vita3K game discovery, specify your own local installation path (no author-specific path is assumed):
+Run focused regressions:
 
-```sh
-./vitanx-launch list-games --app-root '/path/to/your/vita3k/ux0/app'
-# Or export VITANX_APP_ROOT='/path/to/your/vita3k/ux0/app'
+```
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=tests python3 -m unittest -v test_vitanx test_elf_segments test_elf_dependencies test_self_parser test_self_extract test_vita_module test_recompiler test_indirect test_guest_context test_exclusive test_neon_fp test_packaging
 ```
 
-Advanced experimental multi-module execution is described in `docs/ARCHITECTURE.md` and the code under `scripts/`. Inputs must be provided locally by the user; encrypted game content is not supported by the public frontend. Do not upload your game files, logs containing private paths, saves, or personally identifying metadata to GitHub issues.
+See [architecture](docs/ARCHITECTURE.md), [inventory](docs/INVENTORY.md),
+[licensing and provenance](docs/LICENSING.md), [status](docs/STATUS.md), and
+[rollback](docs/ROLLBACK.md). Legacy `vitaxnative` is an internal compatibility
+package retained so imported regressions remain unchanged. Its version string is
+not vitanx's version. Source-project paths in historical notes are references,
+not installation dependencies. The original launcher and recovery/decryption
+workflows were deliberately not imported into the active tool.
 
-## Privacy, attribution, and release status
 
-- Read [PRIVACY.md](PRIVACY.md) before sharing issues or diagnostic logs.
-- Run `python3 scripts/audit_public_release.py` before committing or publishing.
-- See [docs/LICENSING.md](docs/LICENSING.md) and [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md). Inherited VitaXNative source was not supplied with a verified project-wide redistribution license; publication requires a rights review and license decision. **Do not publish this snapshot until that review is complete.**
-- VitaNX is independent of and not endorsed by Sony or Vita3K. PlayStation and PlayStation Vita are trademarks of their respective owners.
+Multi-module native execution (no application packaging):
 
-**Status: public-source candidate, not yet approved for GitHub publishing, and not a playable commercial-game release.**
+```
+python3 scripts/run_vita_modules.py /path/main.elf builds/new-module-run \
+  --module /path/support.elf --heap-mib 256 --instruction-limit 50000
+```
+
+Use `--deferred /path/support.elf` for an explicitly authorized library to load
+on first unresolved function call. Inputs must be plaintext ELF or explicitly
+plaintext SELF. Encryption is rejected. `--diagnostic-unresolved` retains missing
+functions as traps on reach; it does not invent service results. Module starts
+run in the supplied order; support stops run in reverse order after normal return.
+Guest SceSysmodule load/query calls are connected to explicit providers via
+`--sysmodule 15=/path/authorized/plaintext-provider.elf`. The provider is mapped,
+linked and initialized before success; missing providers return load errors.
+Already initialized ULT/FiOS2 modules are tracked. Final unload remains unsupported
+while mappings/imports are pinned. Full Vita Modulemgr syscalls remain incomplete.
+
+
+AppUtil now has a bounded native compatibility provider, with initialization,
+configuration, queued events and isolated save storage. See docs/APPUTIL.md for
+supported APIs and model assumptions. `--apputil-config /path/config.json` selects
+explicit local device settings. Unsupported functions still stop diagnostics.
+
+Optional live media integration: add `--media` to `scripts/run_vita_modules.py`
+to compile and connect the existing GXM/Metal, Core Audio and Cocoa/controller
+bridges to the same guest memory and scheduler. This is a bounded compatibility
+subset; it does not establish commercial frames or gameplay. See
+[parallel workstreams](docs/PARALLEL_ENGINEERING.md) and [power policy](docs/POWER.md).
+Summarize existing run evidence without a new launch:
+`python3 scripts/compatibility_report.py builds/<run>/execution.json`.
+
+## Interactive Terminal launcher
+
+Run `vitanx` to open the interactive conversion menu.
+
+Option 3 creates signed standalone ARM64 macOS applications.
+The default output directory is
+`~/Applications/PlayStation Vita Games/`.
+
+Set the `VITANX_APP_ROOT` environment variable to configure
+your installed Vita game library.
+
+Encrypted titles require existing plaintext executables.
+
+## Current development status
+
+Standalone application packaging is functional. CPU translation,
+Metal graphics, shader translation, audio and system service
+compatibility remain under active development.
+
+Commercial gameplay is not yet verified. Successful conversion
+does not guarantee playable games.
+
+Community contributions are welcome.

@@ -23,7 +23,7 @@ typedef struct {
 } vx_import_capability;
 /* Stable optional-feature list for build/preflight tools, parsed without having
    to load host libraries. Kept consistent with the compiled capability table. */
-#define VX_WINDOW_IMPORT_NIDS UINT32_C(0x67E7AB83), UINT32_C(0xA497B150), UINT32_C(0xA9C3CED6), UINT32_C(0xEC752AAF), UINT32_C(0x1B9C5D14), UINT32_C(0x26531526), UINT32_C(0x10A2CA25), UINT32_C(0xB18370C2), UINT32_C(0x41194411), UINT32_C(0xFF082DF0), UINT32_C(0x169A1D58)
+#define VX_WINDOW_IMPORT_NIDS UINT32_C(0x67E7AB83), UINT32_C(0xA497B150), UINT32_C(0xA9C3CED6), UINT32_C(0xEC752AAF), UINT32_C(0x1B9C5D14), UINT32_C(0x26531526), UINT32_C(0x10A2CA25), UINT32_C(0xB18370C2), UINT32_C(0x41194411), UINT32_C(0xFF082DF0), UINT32_C(0x169A1D58), UINT32_C(0x104ED1A7), UINT32_C(0x81A89660), UINT32_C(0x15F81E8C), UINT32_C(0xA59454D3), UINT32_C(0x860BF292), UINT32_C(0x15F96FB0), UINT32_C(0x27A0C5FB), UINT32_C(0xC4226A3E), UINT32_C(0xE2D99296), UINT32_C(0xA7178860), UINT32_C(0xB1DC4378), UINT32_C(0xBD27F830), UINT32_C(0x324F1B66), UINT32_C(0x1FFFD965)
 const vx_import_capability *vx_runtime_import_capabilities(size_t *count);
 /* Reserve a page-aligned heap within the caller's guest backing, separate from
    image and stack. Imports verify the reservation fits the actual backing.

@@ -17,6 +17,10 @@ def inspect_gxp(path):
     path=Path(path)
     with path.open('rb') as stream:
         raw=stream.read(MAX_SIZE+1)
+    return inspect_gxp_bytes(raw, path)
+
+
+def inspect_gxp_bytes(raw, path='<guest memory>'):
     if len(raw)>MAX_SIZE:raise ValueError('GXP exceeds inspection size limit')
     if len(raw)<HEADER_SIZE or raw[:4]!=b'GXP\0':
         raise ValueError('invalid or truncated GXP header')

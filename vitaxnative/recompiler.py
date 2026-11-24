@@ -1044,7 +1044,7 @@ def _thumb_it_slots(memory, offset, end, pc):
     return slots, cursor - offset
 
 
-def translate_elf(path: Path, imports=None, entry=None, indirect_targets=(), *, defer_decode_errors=False, max_instructions=MAX_INSTRUCTIONS, discover_literal_calls=False, runtime_fallback=False, partial_regions=False) -> dict:
+def translate_elf(path: Path, imports=None, entry=None, indirect_targets=(), *, defer_decode_errors=False, max_instructions=MAX_INSTRUCTIONS, discover_literal_calls=False, runtime_fallback=False, partial_regions=False, retain_image=True) -> dict:
     """Translate a bounded fixed-address ARM ELF; never execute it.
 
     ET_SCE_* entry/imports come from validated module metadata.
@@ -1332,7 +1332,7 @@ def translate_elf(path: Path, imports=None, entry=None, indirect_targets=(), *, 
                '#define vx_write8(p,v) do{if(!vn_guest_write_allowed((p),1))VX_RETURN(-2);vx_store8((p),(v));}while(0)\n')
         c_source=c_source.replace('int vx_guest_target_valid(uint32_t);',guard+'int vx_guest_target_valid(uint32_t);')
         c_source=c_source.replace('vx_import(', 'vn_import(').replace('vx_import_vfp(', 'vn_import_vfp(')
-    return {'c_source': c_source, 'memory_image': bytes(memory),
+    return {'c_source': c_source, 'memory_image': bytes(memory) if retain_image else None,
             'memory_base':memory_base, 'module':module, 'relocation_validation':relocation_validation,
             'entry': entry, 'instruction_count': len(decoded), 'decode_errors':decode_errors,
             'dispatch_addresses':sorted(set(decoded)|set(hooks)),
